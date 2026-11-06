@@ -390,6 +390,7 @@ body:has(#mSetup.on) .cover-acts{animation:none;opacity:0;}
 .sheet-acts .btn{flex:1 1 auto;padding:0 14px;}
 .field{margin-top:14px;}
 .field label{display:block;font-size:11px;color:var(--ink-3);margin-bottom:6px;letter-spacing:.04em;}
+.field-tip{font-size:11px;color:var(--ink-3);margin-top:6px;line-height:1.5;}
 .field input{
   width:100%;min-height:44px;padding:0 14px;font-size:16px;
   border-radius:12px;border:1.5px solid var(--line-strong);background:#fff;
@@ -403,6 +404,8 @@ body:has(#mSetup.on) .cover-acts{animation:none;opacity:0;}
 }
 .avatar-pick button img{width:38px;height:38px;object-fit:contain;}
 .avatar-pick button.on{border-color:var(--coral);background:#FFF3EC;}
+.avatar-pick button.ava-up{border-style:dashed;color:#8a93a0;font-size:20px;line-height:1;}
+.avatar-pick button.ava-up.on{border-style:solid;color:var(--coral);}
 
 /* 排行榜 */
 .ranklist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px;}
@@ -705,6 +708,8 @@ input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;bac
       <div class="field">
         <label>头像</label>
         <div class="avatar-pick" id="avatarPick"></div>
+        <input type="file" id="avaFile" accept="image/*" hidden>
+        <div class="field-tip">点虚线格子可以上传自己的照片，头像只存在这台手机（换设备请用下面的存档码带走）</div>
       </div>
       <div class="field">
         <label for="codeBox">存档码（换设备时导出、粘贴导入）</label>
@@ -857,6 +862,7 @@ input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;bac
       <div class="field">
         <label>头像</label>
         <div class="avatar-pick" id="setupAvatar"></div>
+        <div class="field-tip">点虚线格子可以上传自己的照片</div>
       </div>
       <div class="field">
         <label for="setupNick">昵称（最多 8 个字，随时可改）</label>
@@ -1246,7 +1252,7 @@ var state = {
   busy: false,
   cell: 36,
   gap: 3,
-  player: { name: "咪菇小王子", avatar: 3 },
+  player: { name: "咪菇小王子", avatar: 3, custom: "" },
   saveId: "",
   starred: false,
   sfx: { click: true, pop: true, vol: 45, mute: false }
@@ -1440,7 +1446,7 @@ function updateHud(){
   $("#lsTarget").textContent = isBonus ? "无目标" : (isEndlessHud ? "无上限" : fmt(state.target));
   $("#lsName").textContent = state.player.name;
   $("#lsSub").textContent = "累计消除 " + fmt(state.total) + " 只";
-  $("#lsAvatar").src = "assets/gum-" + COLORS[state.player.avatar] + ".webp";
+  $("#lsAvatar").src = avatarSrc();
 
   // 无限模式用「立即结算」，闯关模式用「重新开始」，两者互斥，位置固定
   var btEnd = document.getElementById("btnEndSettle");
@@ -2479,6 +2485,7 @@ function saveNow(){
       id: state.saveId,
       name: state.player.name,
       avatar: state.player.avatar,
+      custom: state.player.custom,
       level: state.level,
       unlocked: state.unlocked,
       earn: state.earn,
@@ -2546,6 +2553,8 @@ function applySaveData(d){
   state.saveId = (typeof d.id === "string" && d.id) ? d.id : genSaveId();
   state.player.name = cleanName(d.name);
   state.player.avatar = (typeof d.avatar === "number" && d.avatar >= 0 && d.avatar < 6) ? d.avatar : 3;
+  var _custom = (typeof d.custom === "string" && /^data:image\/(jpeg|png|webp);base64,/.test(d.custom) && d.custom.length <= 22000) ? d.custom : "";
+  state.player.custom = _custom || state.player.custom || "";
   state.level = clamp(parseInt(d.level, 10) || 1, 1, TOTAL_LEVELS);
   state.unlocked = clamp(parseInt(d.unlocked, 10) || 1, 1, TOTAL_LEVELS);
   state.total = Math.max(0, parseInt(d.total, 10) || 0);
@@ -2735,18 +2744,107 @@ function syncSfxUI(){
 /* ============================================================
    头像选择
    ============================================================ */
-function renderAvatarPick(container, current, onPick){
-  container.innerHTML = COLORS.map(function(c, i){
-    return '<button type="button" data-i="' + i + '" class="' + (i === current ? "on" : "") + '" aria-label="头像 ' + (i + 1) + '">' +
+function avatarSrc(){
+  return state.player.custom || ("assets/gum-" + COLORS[state.player.avatar] + ".webp");
+}
+function renderAvatarPick(container, current, custom, onPick, onCustom){
+  if (!container) return;
+  var html = COLORS.map(function(c, i){
+    return '<button type="button" data-i="' + i + '" class="' + (i === current && !custom ? "on" : "") + '" aria-label="头像 ' + (i + 1) + '">' +
       '<img src="assets/gum-' + c + '.webp" alt=""></button>';
   }).join("");
+  html += '<button type="button" data-i="-1" class="ava-up' + (custom ? " on" : "") + '" aria-label="上传自己的照片">' +
+    (custom ? '<img src="' + custom + '" alt="">' : '+') + '</button>';
+  container.innerHTML = html;
   container.onclick = function(e){
     var btn = e.target.closest("button[data-i]");
     if (!btn) return;
+    var i = parseInt(btn.dataset.i, 10);
     $$("button", container).forEach(function(b){ b.classList.remove("on"); });
     btn.classList.add("on");
-    onPick(parseInt(btn.dataset.i, 10));
+    if (i === -1){
+      if (onCustom) onCustom();
+      return;
+    }
+    onPick(i);
   };
+}
+/* 把用户挑的照片裁成正方形、缩到 96px、压成体积很小的 JPEG 再存，避免存档被撑爆 */
+function readAvatarFile(file, cb){
+  if (!file || !/^image\//.test(file.type || "")){ cb("请选一张图片文件"); return; }
+  var url = URL.createObjectURL(file);
+  var img = new Image();
+  img.onload = function(){
+    try {
+      var s = Math.min(img.width, img.height);
+      var canvas = document.createElement("canvas");
+      canvas.width = 96; canvas.height = 96;
+      var ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, 96, 96);
+      ctx.drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, 96, 96);
+      URL.revokeObjectURL(url);
+      var q = 0.72, out = canvas.toDataURL("image/jpeg", q);
+      while (out.length > 16000 && q > 0.3){
+        q -= 0.08;
+        out = canvas.toDataURL("image/jpeg", q);
+      }
+      if (out.length > 22000){ cb("这张图片太复杂了，换一张试试"); return; }
+      cb(null, out);
+    } catch (err){ URL.revokeObjectURL(url); cb("这张图片处理失败，换一张试试"); }
+  };
+  img.onerror = function(){ URL.revokeObjectURL(url); cb("这张图片读不出来，换一张试试"); };
+  img.src = url;
+}
+var avaCb = null;
+function openAvatarPicker(cb){
+  avaCb = cb;
+  var f = $("#avaFile");
+  if (!f){ toast("这个界面暂时不能上传头像"); return; }
+  f.value = "";
+  f.click();
+}
+function bindAvatarFile(){
+  var f = $("#avaFile");
+  if (!f) return;
+  f.addEventListener("change", function(){
+    var file = this.files && this.files[0];
+    if (!file) return;
+    readAvatarFile(file, function(err, dataUrl){
+      if (err){ toast(err); return; }
+      if (avaCb) avaCb(dataUrl);
+      toast("头像已换成这张");
+    });
+  });
+}
+function renderAllAvaPicks(){
+  // 改昵称面板：改完立刻落盘
+  renderAvatarPick($("#avatarPick"), state.player.avatar, state.player.custom, function(i){
+    state.player.custom = "";
+    state.player.avatar = i;
+    save();
+    updateHud();
+    renderAllAvaPicks();
+  }, function(){
+    openAvatarPicker(function(dataUrl){
+      state.player.custom = dataUrl;
+      save();
+      updateHud();
+      renderAllAvaPicks();
+    });
+  });
+  // 首次设定面板：只改内存，点「开始」才写存档
+  renderAvatarPick($("#setupAvatar"), state.player.avatar, state.player.custom, function(i){
+    state.player.custom = "";
+    state.player.avatar = i;
+    renderAllAvaPicks();
+  }, function(){
+    openAvatarPicker(function(dataUrl){
+      state.player.custom = dataUrl;
+      updateHud();
+      renderAllAvaPicks();
+    });
+  });
 }
 
 /* ============================================================
@@ -2815,11 +2913,7 @@ function bindEvents(){
     $("#saveId").textContent = state.saveId;
     $("#nickInput").value = state.player.name;
     $("#codeBox").value = "";
-    renderAvatarPick($("#avatarPick"), state.player.avatar, function(i){
-      state.player.avatar = i;
-      save();
-      updateHud();
-    });
+    renderAllAvaPicks();
     openModal("mSave");
   });
 
@@ -2954,6 +3048,7 @@ function bindEvents(){
   $("#btnExport").addEventListener("click", function(){
     var d = {
       v: 1, id: state.saveId, name: state.player.name, avatar: state.player.avatar,
+      custom: state.player.custom,
       level: state.level, unlocked: state.unlocked, earn: state.earn, total: state.total,
       starred: state.starred, sfx: state.sfx,
       snap: {
@@ -3047,14 +3142,13 @@ function boot(){
 
   bindEvents();
 
-  // 首次设定面板
-  renderAvatarPick($("#setupAvatar"), state.player.avatar, function(i){
-    state.player.avatar = i;
-  });
-
   var saved = loadSave();
   boardLoad();
   syncSfxUI();
+  bindAvatarFile();
+
+  // 首次设定面板
+  renderAllAvaPicks();
 
   if (!saved){
     state.player.name = "";
