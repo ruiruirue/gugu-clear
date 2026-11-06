@@ -2515,6 +2515,10 @@ var NAME_ADULT_BAN = [
   "porn", "sexy", "sex", "fuck", "pussy", "dick", "cum", "hentai", "nsfw", "onlyfans",
   "yuepao", "zuoai", "koujiao", "caobi"
 ];
+/* 疾病名与谐音、繁体、拼音写法也不允许出现在昵称里 */
+var NAME_BAN_HEALTH = [
+  "艾滋", "爱滋", "艾兹", "艾茲", "愛滋", "愛茲", "艾滋病毒", "hiv", "aids", "aizhi", "aizi"
+];
 function nameKey(s){
   return String(s || "").toLowerCase().replace(/[^0-9a-z\u4e00-\u9fa5]/g, "");
 }
@@ -2524,6 +2528,7 @@ function nameHit(s){
   var i;
   for (i = 0; i < NAME_ROLE_BAN.length; i++) if (t.indexOf(NAME_ROLE_BAN[i]) >= 0) return { role: NAME_ROLE_BAN[i] };
   for (i = 0; i < NAME_ADULT_BAN.length; i++) if (t.indexOf(NAME_ADULT_BAN[i]) >= 0) return { adult: true };
+  for (i = 0; i < NAME_BAN_HEALTH.length; i++) if (t.indexOf(NAME_BAN_HEALTH[i]) >= 0) return { adult: true };
   return null;
 }
 function nameError(s){
