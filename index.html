@@ -782,7 +782,7 @@ input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;bac
         冰块菇菇在消除时和普通菇菇一样计分，但它会牢牢钉在原地，别指望下面空了它自己掉下来。
       </p>
       <div class="sheet-acts">
-        <button class="btn primary" id="btnIceOk" style="width:100%;">我知道了，开始第 30 关</button>
+        <button class="btn primary" id="btnIceOk" style="width:100%;">我知道了</button>
       </div>
     </div>
   </div>
@@ -1546,9 +1546,11 @@ function startLevel(level){
   updateHint();
   updateHud();
   save();
-  // 30关首次出现时强制教学
+  // 第 10 关首次出现冰块时强制教学
   if (level >= 10 && !localStorage.getItem("gg_ice_seen")){
     localStorage.setItem("gg_ice_seen", "1");
+    var iceBtn = document.getElementById("btnIceOk");
+    if (iceBtn) iceBtn.textContent = "我知道了，开始第 " + level + " 关";
     setTimeout(function(){ openModal("mIce"); }, 300);
   }
   requestAnimationFrame(function(){ layout(); });
