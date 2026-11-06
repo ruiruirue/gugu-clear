@@ -1947,7 +1947,7 @@ function showResult(cleared, passed, diff, replay, before){
   var miniHtml = mini.map(function(p, i){
     return '<li class="rankrow' + (p.me ? " me" : "") + '">' +
       '<span class="rk">' + (i + 1) + '</span>' +
-      '<img src="assets/gum-' + COLORS[p.avatar] + '.webp" alt="">' +
+      '<img src="' + (p.me ? avatarSrc() : ("assets/gum-" + COLORS[p.avatar] + ".webp")) + '" alt="">' +
       '<span class="rn"><b>' + esc(p.name) + '</b><i>' + (isEndless ? "无限模式" : ("第 " + p.level + " 关")) + '</i></span>' +
       '<span class="rs"><b>' + fmt(p.best) + '</b><i>' + (isEndless ? "无限最高" : "最高分") + '</i></span>' +
       '</li>';
@@ -2377,7 +2377,7 @@ function renderRank(){
       var medal = idx < 1 ? "top1" : (idx < 2 ? "top2" : (idx < 3 ? "top3" : ""));
       return '<li class="rankrow ' + (p.me ? "me " : "") + medal + '">' +
         '<span class="rk">' + (idx + 1) + '</span>' +
-        '<img src="assets/gum-' + COLORS[p.avatar] + '.webp" alt="" loading="lazy" decoding="async">' +
+        '<img src="' + (p.me ? avatarSrc() : ("assets/gum-" + COLORS[p.avatar] + ".webp")) + '" alt="" loading="lazy" decoding="async">' +
         '<span class="rn"><b>' + esc(p.name) + (p.me ? "（我）" : "") + '</b><i>' + (isEndless ? "无限模式" : ("第 " + p.level + " 关")) + '</i></span>' +
         '<span class="rs"><b>' + fmt(p.best) + '</b><i>' + (isEndless ? "无限最高" : "最高分") + '</i></span>' +
         '</li>';
