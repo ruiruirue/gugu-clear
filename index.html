@@ -2284,7 +2284,8 @@ function boardSyncRun(force){
     })
     .then(function(){
       // 平时只发自己这一条（省 ntfy 额度）；云端超过 6 小时没有全量快照时，才补发一次所有人
-      var sig = JSON.stringify(board.players);
+      // 指纹只算自己那一条：别人更新时不必跟着重发，否则每次开榜都会给云端多塞一条消息
+      var sig = JSON.stringify(boardRow(boardMine()));
       var needFull = !board.fullAt || (Date.now() - board.fullAt) > 6 * 60 * 60 * 1000;
       if (sig === board.sig && !needFull) return;
       if (!force && board.pubAt && Date.now() - board.pubAt < 15000) return;
