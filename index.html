@@ -2505,9 +2505,41 @@ function save(){
   saveTimer = setTimeout(saveNow, 260);
 }
 
+/* 昵称限制词：不许用「猫女 / 猫妖」这类冒充角色的名字，也不许出现涉黄词。
+   匹配前先把空格、标点、符号去掉，避免用「猫 女」「猫·妖」这类写法绕过。 */
+var NAME_ROLE_BAN = ["猫女", "猫妖", "maonv", "maoyao"];
+var NAME_ADULT_BAN = [
+  "色情", "淫秽", "淫荡", "淫", "嫖娼", "嫖客", "卖淫", "妓女", "妓", "约炮", "约啪", "裸聊", "裸照",
+  "做爱", "性交", "口交", "肛交", "乳交", "自慰", "撸管", "打炮", "黄片", "毛片", "a片", "三级片",
+  "春药", "性奴", "强暴", "轮奸", "兽交", "群交", "破处",
+  "porn", "sexy", "sex", "fuck", "pussy", "dick", "cum", "hentai", "nsfw", "onlyfans",
+  "yuepao", "zuoai", "koujiao", "caobi"
+];
+function nameKey(s){
+  return String(s || "").toLowerCase().replace(/[^0-9a-z\u4e00-\u9fa5]/g, "");
+}
+function nameHit(s){
+  var t = nameKey(s);
+  if (!t) return null;
+  var i;
+  for (i = 0; i < NAME_ROLE_BAN.length; i++) if (t.indexOf(NAME_ROLE_BAN[i]) >= 0) return { role: NAME_ROLE_BAN[i] };
+  for (i = 0; i < NAME_ADULT_BAN.length; i++) if (t.indexOf(NAME_ADULT_BAN[i]) >= 0) return { adult: true };
+  return null;
+}
+function nameError(s){
+  var hit = nameHit(s);
+  if (!hit) return "";
+  return hit.role ? ("昵称里不能出现「" + hit.role + "」，换一个吧") : "昵称里有不合适的词，换一个吧";
+}
+function cleanName(s){
+  var v = String(s || "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 8);
+  if (nameHit(v)) v = "";
+  return v || "咪菇小王子";
+}
+
 function applySaveData(d){
   state.saveId = (typeof d.id === "string" && d.id) ? d.id : genSaveId();
-  state.player.name = (typeof d.name === "string" && d.name.trim()) ? d.name.trim().slice(0, 8) : "咪菇小王子";
+  state.player.name = cleanName(d.name);
   state.player.avatar = (typeof d.avatar === "number" && d.avatar >= 0 && d.avatar < 6) ? d.avatar : 3;
   state.level = clamp(parseInt(d.level, 10) || 1, 1, TOTAL_LEVELS);
   state.unlocked = clamp(parseInt(d.unlocked, 10) || 1, 1, TOTAL_LEVELS);
@@ -2903,6 +2935,12 @@ function bindEvents(){
   });
   $("#nickInput").addEventListener("change", function(){
     var v = this.value.trim().slice(0, 8) || "咪菇小王子";
+    var bad = nameError(v);
+    if (bad){
+      toast(bad);
+      this.value = state.player.name;
+      return;
+    }
     this.value = v;
     state.player.name = v;
     save();
@@ -2951,7 +2989,14 @@ function bindEvents(){
 
   // 首次设定
   $("#btnStart").addEventListener("click", function(){
-    var nick = $("#setupNick").value.trim().slice(0, 8) || "咪菇小王子";
+    var rawNick = $("#setupNick").value.trim().slice(0, 8);
+    var bad = nameError(rawNick);
+    if (bad){
+      toast(bad);
+      $("#setupNick").focus();
+      return;
+    }
+    var nick = rawNick || "咪菇小王子";
     state.player.name = nick;
     state.saveId = genSaveId();
     state.level = 1;
