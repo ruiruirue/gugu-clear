@@ -2069,7 +2069,7 @@ function confirmDialog(title, text, okLabel, cb){
 var BOARD_TOPIC = "gumgum_board_7hq4m2x9";
 var BOARD_URL = "https://ntfy.sh/" + BOARD_TOPIC;
 var BOARD_CACHE = "gumgum_board_v2";
-var BOARD_MAX = 60;
+var BOARD_MAX = 150;
 var board = { players: [], online: false, at: 0, loading: false, err: "", sig: "", pubAt: 0 };
 
 function boardMine(){
@@ -2161,8 +2161,51 @@ function boardMerge(rows, me){
   });
   return list.slice(0, BOARD_MAX);
 }
-function boardSnapshot(){
-  return JSON.stringify({ kind: "snapshot", v: 1, t: Date.now(), players: board.players.map(boardRow) });
+/* ntfy 单条正文超过 4KB 就会被转成附件，客户端读不到快照，所以要切片发送 */
+function utf8Bytes(s){
+  var n = 0, i, c;
+  for (i = 0; i < s.length; i++){
+    c = s.charCodeAt(i);
+    if (c < 0x80) n += 1;
+    else if (c < 0x800) n += 2;
+    else if (c < 0xd800 || c >= 0xdc00) n += 3;
+    else { n += 4; i++; }
+  }
+  return n;
+}
+function boardSnapshotParts(){
+  var all = board.players || [];
+  var LIMIT = 3500;
+  var parts = [], cur = [], i, body;
+  for (i = 0; i < all.length; i++){
+    cur.push(all[i]);
+    body = JSON.stringify({ kind: "snapshot", v: 1, t: Date.now(), players: cur });
+    if (utf8Bytes(body) > LIMIT && cur.length > 1){
+      cur.pop();
+      parts.push(cur.slice());
+      cur = [all[i]];
+    }
+  }
+  parts.push(cur);
+  return parts.map(function(list, idx){
+    return JSON.stringify({ kind: "snapshot", v: 1, t: Date.now(), part: idx, total: parts.length, players: list });
+  });
+}
+function boardPublish(parts){
+  var i = 0;
+  function next(){
+    if (i >= parts.length) return Promise.resolve();
+    var body = parts[i++];
+    return boardReq(BOARD_URL, {
+      method: "POST",
+      body: body,
+      headers: { "Content-Type": "text/plain" }
+    }).then(function(){
+      if (i >= parts.length) return null;
+      return new Promise(function(res){ setTimeout(res, 300); }).then(next);
+    });
+  }
+  return next();
 }
 function boardSync(force){
   force = !!force;
@@ -2218,11 +2261,8 @@ function boardSyncRun(force){
       var stale = !board.pubAt || (Date.now() - board.pubAt) > 4 * 60 * 60 * 1000;
       if (sig === board.sig && !stale) return;
       if (!force && board.pubAt && Date.now() - board.pubAt < 15000) return;
-      return boardReq(BOARD_URL, {
-        method: "POST",
-        body: boardSnapshot(),
-        headers: { "Content-Type": "text/plain" }
-      }).then(function(){
+      // 所有人都进榜：名单超长时切成多条发，读取端会合并回来
+      return boardPublish(boardSnapshotParts()).then(function(){
         board.sig = sig;
         board.pubAt = Date.now();
         boardCache();
