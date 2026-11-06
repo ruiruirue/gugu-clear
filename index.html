@@ -1962,7 +1962,7 @@ function showResult(cleared, passed, diff, replay, before){
             '<div class="rstat ' + cls + '"><em>' + (diff >= 0 ? "超出" : "差额") + '</em><b>' + fmt(Math.abs(diff)) + '</b></div>' +
             '<div class="rstat"><em>本局消除</em><b>' + fmt(state.turnCleared) + '</b></div>')) +
     '</div>' +
-    '<p style="margin:14px 0 6px;font-size:11px;color:var(--ink-3);">本次排名 第 ' + rank + ' 名 · 榜上前三</p>' +
+    '<p style="margin:14px 0 6px;font-size:11px;color:var(--ink-3);">' + (rank > 0 ? ("本次排名 第 " + rank + " 名 · 榜上前三") : "还没有分数进榜 · 榜上前三") + '</p>' +
     '<ol class="ranklist">' + miniHtml + '</ol>' +
     '<div class="sheet-acts">' +
       (isEndless
@@ -2155,7 +2155,10 @@ function boardMerge(rows, me){
     }
   }
   var list = order.map(function(id){ return map[id]; });
-  list.sort(function(a, b){ return (b.best - a.best) || (b.ebest - a.ebest) || (b.level - a.level); });
+  // 两个榜各自都有高手，取前 60 时按「两榜里更高的那个分数」排序，避免只玩无限模式的人被截掉
+  list.sort(function(a, b){
+    return (Math.max(b.best, b.ebest) - Math.max(a.best, a.ebest)) || (b.best - a.best) || (b.level - a.level);
+  });
   return list.slice(0, BOARD_MAX);
 }
 function boardSnapshot(){
@@ -2242,24 +2245,28 @@ function rankListData(tab){
   var list = [];
   (board.players || []).forEach(function(p){
     if (!p || p.sid === me.sid) return;
+    var v = Math.max(0, parseInt(p[key], 10) || 0);
+    if (!v) return;               // 0 分不上榜
     list.push({
       sid: p.sid,
       name: String(p.name || "菇友").slice(0, 8),
       avatar: ((parseInt(p.avatar, 10) || 0) % 6 + 6) % 6,
       level: Math.max(1, parseInt(p.level, 10) || 1),
-      best: Math.max(0, parseInt(p[key], 10) || 0),
+      best: v,
       me: false
     });
   });
-  list.push({ sid: me.sid, name: me.name, avatar: me.avatar, level: me.level, best: Math.max(0, parseInt(me[key], 10) || 0), me: true });
+  var mineScore = Math.max(0, parseInt(me[key], 10) || 0);
+  if (mineScore) list.push({ sid: me.sid, name: me.name, avatar: me.avatar, level: me.level, best: mineScore, me: true });
   list.sort(function(a, b){ return (b.best - a.best) || (b.level - a.level); });
   return list;
 }
+/* 没上榜（0 分）时返回 0 */
 function myRank(tab){
   tab = tab || rankTab;
   var all = rankListData(tab);
   for (var i = 0; i < all.length; i++) if (all[i].me) return i + 1;
-  return all.length;
+  return 0;
 }
 function shortNum(n){
   if (n >= 1000) return (n / 1000).toFixed(1) + "k";
@@ -2276,15 +2283,16 @@ function renderRank(){
   $("#rankTabEndless").classList.toggle("on", isEndless);
 
   var mineRow = all.filter(function(p){ return p.me; })[0];
-  $("#rankMine").textContent = "我的最高分 " + fmt(mineRow ? mineRow.best : 0) + " · 当前第 " + rank + " 名";
+  $("#rankMine").textContent = mineRow
+    ? ("我的最高分 " + fmt(mineRow.best) + " · 当前第 " + rank + " 名")
+    : ("还没上榜 · 拿到分数才进" + (isEndless ? "无限榜" : "闯关榜"));
 
   var shown = all.slice(0, 60);
   if (rank > 60) shown = shown.concat([all[rank - 1]]);
 
-  var others = all.filter(function(p){ return !p.me; }).length;
-  if (!others){
+  if (!all.length){
     $("#rankList").innerHTML = '<li style="list-style:none;padding:20px 4px;text-align:center;font-size:12px;color:var(--ink-3);">' +
-      (isEndless ? "无限榜还没有别人，把链接发给他们试试" : "还没有别的菇友上榜，把链接发给他们试试") + '</li>';
+      (isEndless ? "无限榜还没有人上榜，玩一局点「立即结算」就能进" : "还没有人上榜，通关一关就能进") + '</li>';
   } else {
     $("#rankList").innerHTML = shown.map(function(p){
       var idx = all.indexOf(p);
@@ -2301,7 +2309,7 @@ function renderRank(){
   var note = $("#rankNote");
   if (note){
     note.textContent = board.loading ? "正在同步云端榜单…"
-      : board.online ? ("云端共榜 · " + (isEndless ? "无限模式" : "闯关模式") + " 共 " + all.length + " 位玩家" + (isEndless ? "，结算后自动更新" : "，通关后自动更新"))
+      : board.online ? ("云端共榜 · " + (isEndless ? "无限模式" : "闯关模式") + " " + all.length + " 位有成绩的玩家" + (isEndless ? "，结算后自动更新" : "，通关后自动更新"))
       : (board.at ? "暂时连不上云端，先显示上次同步的榜单" : "暂时连不上云端，榜单里先只有你");
   }
 }
