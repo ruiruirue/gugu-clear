@@ -363,6 +363,17 @@ body:has(#mSetup.on) .cover-acts{animation:none;opacity:0;}
 .sheet-head h2{margin:0;font-family:var(--font-round);font-size:19px;font-weight:800;letter-spacing:.02em;}
 .sheet-head .icon-btn{width:30px;height:30px;box-shadow:none;}
 .sheet-body{padding:4px 18px 20px;overflow-y:auto;overscroll-behavior:contain;}
+/* 按钮讲解 */
+.guide-group{margin-top:16px;}
+.guide-group h3{margin:0 0 6px;font-size:12px;font-weight:800;color:#3A7D1A;letter-spacing:.06em;}
+.guide-row{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px dashed var(--line);}
+.guide-row:last-child{border-bottom:0;}
+.guide-row .gi{
+  width:27px;height:27px;flex:0 0 27px;display:grid;place-items:center;border-radius:50%;
+  background:var(--card);border:1.2px solid var(--line);font-size:14px;line-height:1;
+}
+.guide-row b{display:block;font-size:13px;margin-bottom:2px;color:var(--ink);}
+.guide-row p{margin:0;font-size:11.5px;line-height:1.6;color:var(--ink-3);}
 .sheet-note{margin:12px 0 0;font-size:11px;line-height:1.7;color:var(--ink-3);}
 .sheet-acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;}
 .sheet-acts .btn{flex:1 1 auto;padding:0 14px;}
@@ -790,6 +801,39 @@ input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;bac
       <div class="sheet-acts">
         <button class="btn primary" id="btnIceOk" style="width:100%;">我知道了</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 模态：按钮讲解（首次进入游戏强制弹出） ===== -->
+<div class="modal" id="mGuide" aria-hidden="true">
+  <div class="sheet" style="max-width:400px;">
+    <div class="sheet-head"><h2>先认一下这些按钮</h2></div>
+    <div class="sheet-body" style="overflow-y:auto;flex:1 1 auto;min-height:0;padding-bottom:8px;">
+      <p class="sheet-note" style="margin:0 0 4px;">玩法：点选相邻同色菇菇，再点一下消除，一次连得越多分越高。</p>
+
+      <div class="guide-group">
+        <h3>右上角这一排小圆钮</h3>
+        <div class="guide-row"><span class="gi">🔇</span><div><b>静音</b><p>一键关掉全部声音，再点一下恢复；图标上有斜线就是正在静音。</p></div></div>
+        <div class="guide-row"><span class="gi">⭐</span><div><b>收藏</b><p>把游戏加进收藏夹，下次一点就开。</p></div></div>
+        <div class="guide-row"><span class="gi">✕</span><div><b>关闭本局</b><p>结束这一局回到封面，已拿到的进度会存下来。</p></div></div>
+        <div class="guide-row"><span class="gi">▦</span><div><b>关卡地图</b><p>挑选已经解锁的关卡重玩，通关过的都能再刷一遍。</p></div></div>
+        <div class="guide-row"><span class="gi">⚙</span><div><b>存档与 ID</b><p>看你的存档 ID、换设备读档，也能改昵称和头像。</p></div></div>
+        <div class="guide-row"><span class="gi">🎚</span><div><b>音效设置</b><p>单独调音效和背景音乐的音量大小。</p></div></div>
+        <div class="guide-row"><span class="gi">⌃</span><div><b>收起 / 展开</b><p>把上面这一排收起来给棋盘腾地方，再点一下展开；收起状态会记住。</p></div></div>
+      </div>
+
+      <div class="guide-group">
+        <h3>底部按钮</h3>
+        <div class="guide-row"><span class="gi">🏆</span><div><b>排行榜</b><p>看大家的成绩排名。</p></div></div>
+        <div class="guide-row"><span class="gi">🔨</span><div><b>锤子</b><p>敲掉任意一只菇菇，冰块菇菇也能敲开。数量有限，用一次少一个。</p></div></div>
+        <div class="guide-row"><span class="gi">💣</span><div><b>炸弹</b><p>一次炸掉一片菇菇，适合给一堆同色开道。数量有限，用一次少一个。</p></div></div>
+        <div class="guide-row"><span class="gi">↻</span><div><b>重新开始</b><p>本局重打，本局拿到的分会清零，之前关卡结转的分不动。</p></div></div>
+      </div>
+
+    </div>
+    <div style="padding:0 18px 18px;flex:0 0 auto;background:var(--card);">
+      <button class="btn primary" id="btnGuideOk" style="width:100%;">我已知晓</button>
     </div>
   </div>
 </div>
@@ -1507,6 +1551,21 @@ function floatScore(cx, cy, gain){
    开局
    ============================================================ */
 var LEVEL_KEY_CACHE = {};
+/* 首次进入游戏时弹出按钮讲解 */
+function maybeShowGuide(){
+  if (localStorage.getItem("gg_guide_seen")) return;
+  var guide = document.getElementById("mGuide");
+  if (!guide || guide.classList.contains("on")) return;
+  setTimeout(function(){
+    if (localStorage.getItem("gg_guide_seen")) return;
+    if (guide.classList.contains("on")) return;
+    // 已有别的弹窗（比如冰块教学、设定面板）时先让路，下次再弹
+    var others = $$(".modal.on").filter(function(m){ return m.id !== "mGuide"; });
+    if (others.length) return;
+    openModal("mGuide");
+  }, 320);
+}
+
 /* 每次进入第 10 关都弹冰块教学 */
 function maybeShowIceTip(lv){
   if (lv !== 10) return;
@@ -1915,7 +1974,10 @@ function showView(name){
   state.view = name;
   $("#viewCover").classList.toggle("on", name === "cover");
   $("#viewGame").classList.toggle("on", name === "game");
-  if (name === "game") requestAnimationFrame(function(){ layout(); });
+  if (name === "game"){
+    requestAnimationFrame(function(){ layout(); });
+    maybeShowGuide();
+  }
 }
 
 function openModal(id){
@@ -2561,6 +2623,12 @@ function bindEvents(){
   $("#btnCoverRank").addEventListener("click", openRank);
   $("#btnIceOk").addEventListener("click", function(){ closeModal("mIce"); });
 
+  // 按钮讲解：点过「我已知晓」之后不再强制弹出
+  $("#btnGuideOk").addEventListener("click", function(){
+    localStorage.setItem("gg_guide_seen", "1");
+    closeModal("mGuide");
+  });
+
   $("#btnSave").addEventListener("click", function(){
     $("#saveId").textContent = state.saveId;
     $("#nickInput").value = state.player.name;
@@ -2758,7 +2826,7 @@ function bindEvents(){
   // 键盘：空格/回车在结算或弹窗时可关闭（无障碍退路）
   document.addEventListener("keydown", function(e){
     if (e.key === "Escape"){
-      var open = $$(".modal.on").filter(function(m){ return m.id !== "mSetup"; });
+      var open = $$(".modal.on").filter(function(m){ return m.id !== "mSetup" && m.id !== "mGuide"; });
       if (open.length) closeModal(open[open.length - 1].id);
     }
   });
