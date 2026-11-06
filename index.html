@@ -666,7 +666,7 @@ input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;bac
       <div class="field">
         <label for="loadId">输入 ID 读取存档（换设备续玩）</label>
         <div class="saved-id">
-          <input id="loadId" maxlength="12" placeholder="GG-XXXX-XXXX" style="text-transform:uppercase;letter-spacing:.05em;">
+          <input id="loadId" maxlength="16" placeholder="GG-XXXX-XXXXX" style="text-transform:uppercase;letter-spacing:.05em;">
           <button class="btn primary" id="btnLoadId">读取</button>
         </div>
       </div>
@@ -2356,7 +2356,7 @@ function cloudLoadById(id, cb){
       for (var i = lines.length - 1; i >= 0; i--){
         try {
           var row = JSON.parse(lines[i]);
-          if (row.event === "message" && row.message && row.message.indexOf("GGSAVE1:") === 0){
+          if (row.event === "message" && row.message){
             last = row.message;
             break;
           }
@@ -2364,7 +2364,9 @@ function cloudLoadById(id, cb){
       }
       if (!last) { cb(null, "云端没有这个ID的存档"); return; }
       try {
-        var d = JSON.parse(b64decode(last.slice(8)));
+        var payload = last.indexOf("GGSAVE1:") === 0 ? last.slice(8) : last;
+        var d = JSON.parse(b64decode(payload));
+        if (!d || d.v !== 1 || !d.id){ cb(null, "存档数据不完整"); return; }
         cb(d, null);
       } catch(e){ cb(null, "存档数据损坏"); }
     })
