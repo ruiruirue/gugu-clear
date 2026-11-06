@@ -77,6 +77,9 @@ button{background:none;border:0;padding:0;cursor:pointer;}
   font-size:10px;letter-spacing:.16em;color:var(--ink-3);white-space:nowrap;
 }
 .tools{display:flex;align-items:center;gap:5px;}
+.tools.collapsed .tool-item{display:none;}
+.tools.collapsed .tool-toggle svg{transform:rotate(180deg);}
+.tool-toggle svg{transition:transform .18s ease;}
 .icon-btn{
   width:34px;height:34px;display:grid;place-items:center;border-radius:50%;position:relative;
   background:var(--card);border:1.4px solid var(--line);
@@ -541,23 +544,26 @@ input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;bac
     <header class="bar">
       <div class="brand"><h1>消灭菇菇</h1><span>GUM GUM</span></div>
       <nav class="tools">
-        <button class="icon-btn" id="btnMute" title="静音" aria-label="静音">
+        <button class="icon-btn tool-item" id="btnMute" title="静音" aria-label="静音">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13L7.5 14.5H4z"/><path class="wave" d="M15.5 9c1.2 1.3 1.2 4.7 0 6"/><path class="wave2" d="M18 6.5c2.6 2.6 2.6 8.4 0 11"/></svg>
         </button>
-        <button class="icon-btn" id="btnStar" title="收藏" aria-label="收藏">
+        <button class="icon-btn tool-item" id="btnStar" title="收藏" aria-label="收藏">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3.6 2.6 5.4 5.9.8-4.3 4.1 1.1 5.9L12 16.6 7.7 19.8l1.1-5.9-4.3-4.1 5.9-.8z"/></svg>
         </button>
-        <button class="icon-btn" id="btnClose" title="关闭本局" aria-label="关闭本局">
+        <button class="icon-btn tool-item" id="btnClose" title="关闭本局" aria-label="关闭本局">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
         </button>
-        <button class="icon-btn" id="btnMap" title="关卡地图" aria-label="关卡地图">
+        <button class="icon-btn tool-item" id="btnMap" title="关卡地图" aria-label="关卡地图">
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/></svg>
         </button>
-        <button class="icon-btn" id="btnSave" title="存档与ID" aria-label="存档与ID">
+        <button class="icon-btn tool-item" id="btnSave" title="存档与ID" aria-label="存档与ID">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         </button>
-        <button class="icon-btn" id="btnSfx" title="音效设置" aria-label="音效设置">
+        <button class="icon-btn tool-item" id="btnSfx" title="音效设置" aria-label="音效设置">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8.5h2.5M5 15.5h2.5"/><path d="M8.5 5.5v13"/><path d="M15.5 8.5H19M15.5 15.5H19"/><path d="M15.5 5.5v13"/><path d="M4 12h16" opacity=".35"/></svg>
+        </button>
+        <button class="icon-btn tool-toggle" id="btnToolsToggle" title="收起工具栏" aria-label="收起工具栏">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 14.5 12 8.5 18 14.5"/></svg>
         </button>
       </nav>
     </header>
@@ -2531,6 +2537,26 @@ function bindEvents(){
   });
 
   $("#btnMap").addEventListener("click", openMap);
+
+  // 顶部工具栏收起 / 展开（状态记在本机）
+  var toolsNav = document.querySelector("#viewGame .tools");
+  var toolsToggle = $("#btnToolsToggle");
+  if (toolsNav && toolsToggle){
+    var TOOLS_COLLAPSE_KEY = "gg_tools_collapsed";
+    function syncToolsToggle(){
+      var collapsed = toolsNav.classList.contains("collapsed");
+      var label = collapsed ? "展开工具栏" : "收起工具栏";
+      toolsToggle.title = label;
+      toolsToggle.setAttribute("aria-label", label);
+    }
+    if (localStorage.getItem(TOOLS_COLLAPSE_KEY) === "1") toolsNav.classList.add("collapsed");
+    syncToolsToggle();
+    toolsToggle.addEventListener("click", function(){
+      toolsNav.classList.toggle("collapsed");
+      localStorage.setItem(TOOLS_COLLAPSE_KEY, toolsNav.classList.contains("collapsed") ? "1" : "0");
+      syncToolsToggle();
+    });
+  }
 
   $("#btnCoverRank").addEventListener("click", openRank);
   $("#btnIceOk").addEventListener("click", function(){ closeModal("mIce"); });
