@@ -2069,8 +2069,8 @@ function confirmDialog(title, text, okLabel, cb){
 var BOARD_TOPIC = "gumgum_board_7hq4m2x9";
 var BOARD_URL = "https://ntfy.sh/" + BOARD_TOPIC;
 var BOARD_CACHE = "gumgum_board_v2";
-var BOARD_MAX = 150;
-var board = { players: [], online: false, at: 0, loading: false, err: "", sig: "", pubAt: 0 };
+var BOARD_MAX = 1018;
+var board = { players: [], online: false, at: 0, loading: false, err: "", sig: "", pubAt: 0, fullAt: 0 };
 
 function boardMine(){
   var endless = state.level === -1;
@@ -2095,11 +2095,12 @@ function boardLoad(){
     board.at = (d && d.at) ? d.at : 0;
     board.sig = (d && d.sig) ? d.sig : "";
     board.pubAt = (d && d.pubAt) ? d.pubAt : 0;
+    board.fullAt = (d && d.fullAt) ? d.fullAt : 0;
   } catch (e){ /* 缓存不可用时忽略 */ }
 }
 function boardCache(){
   try {
-    localStorage.setItem(BOARD_CACHE, JSON.stringify({ players: board.players, at: board.at, sig: board.sig, pubAt: board.pubAt }));
+    localStorage.setItem(BOARD_CACHE, JSON.stringify({ players: board.players, at: board.at, sig: board.sig, pubAt: board.pubAt, fullAt: board.fullAt }));
   } catch (e){}
 }
 function boardReq(url, opt){
@@ -2188,7 +2189,7 @@ function boardSnapshotParts(){
   }
   parts.push(cur);
   return parts.map(function(list, idx){
-    return JSON.stringify({ kind: "snapshot", v: 1, t: Date.now(), part: idx, total: parts.length, players: list });
+    return JSON.stringify({ kind: "snapshot", v: 1, full: 1, t: Date.now(), part: idx, total: parts.length, players: list });
   });
 }
 function boardPublish(parts){
@@ -2206,6 +2207,17 @@ function boardPublish(parts){
     });
   }
   return next();
+}
+/* 日常同步只发自己这一条：ntfy 每个 IP 每天只有 250 条消息额度，全量分片会把额度迅速用光 */
+function boardPublishMine(){
+  var me = boardRow(boardMine());
+  if (!me) return Promise.resolve();
+  var body = JSON.stringify({ kind: "snapshot", v: 1, t: Date.now(), part: 0, total: 1, players: [me] });
+  return boardReq(BOARD_URL, {
+    method: "POST",
+    body: body,
+    headers: { "Content-Type": "text/plain" }
+  });
 }
 function boardSync(force){
   force = !!force;
@@ -2247,6 +2259,8 @@ function boardSyncRun(force){
         var msg;
         try { msg = JSON.parse(ev.message); } catch (e){ return; }
         if (!msg || msg.kind !== "snapshot" || !msg.players) return;
+        // 记录云端最近一次全量快照的时间，用来判断什么时候该给所有人续期
+        if (msg.full) board.fullAt = Math.max(board.fullAt || 0, parseInt(msg.t, 10) || 0);
         msg.players.forEach(function(p){ rows.push(p); });
       });
       board.players = boardMerge(rows, me);
@@ -2256,15 +2270,16 @@ function boardSyncRun(force){
       boardCache();
     })
     .then(function(){
-      // 内容没变就不发；但超过 4 小时没有发布就补发一次，给服务器上的榜单续期
+      // 平时只发自己这一条（省 ntfy 额度）；云端超过 6 小时没有全量快照时，才补发一次所有人
       var sig = JSON.stringify(board.players);
-      var stale = !board.pubAt || (Date.now() - board.pubAt) > 4 * 60 * 60 * 1000;
-      if (sig === board.sig && !stale) return;
+      var needFull = !board.fullAt || (Date.now() - board.fullAt) > 6 * 60 * 60 * 1000;
+      if (sig === board.sig && !needFull) return;
       if (!force && board.pubAt && Date.now() - board.pubAt < 15000) return;
-      // 所有人都进榜：名单超长时切成多条发，读取端会合并回来
-      return boardPublish(boardSnapshotParts()).then(function(){
+      var job = needFull ? boardPublish(boardSnapshotParts()) : boardPublishMine();
+      return job.then(function(){
         board.sig = sig;
         board.pubAt = Date.now();
+        if (needFull) board.fullAt = Date.now();
         boardCache();
       });
     })
