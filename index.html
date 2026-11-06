@@ -2539,9 +2539,8 @@ function nameHit(s){
   return null;
 }
 function nameError(s){
-  var hit = nameHit(s);
-  if (!hit) return "";
-  return hit.role ? ("昵称里不能出现「" + hit.role + "」，换一个吧") : "昵称里有不合适的词，换一个吧";
+  // 命中任何限制词都只给同一句提示，不点名具体是哪个词
+  return nameHit(s) ? "昵称不合适，换一个吧" : "";
 }
 function cleanName(s){
   var v = String(s || "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 8);
