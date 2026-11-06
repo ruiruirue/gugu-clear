@@ -1501,6 +1501,13 @@ function floatScore(cx, cy, gain){
    开局
    ============================================================ */
 var LEVEL_KEY_CACHE = {};
+/* 每次进入第 10 关都弹冰块教学 */
+function maybeShowIceTip(lv){
+  if (lv !== 10) return;
+  var btn = document.getElementById("btnIceOk");
+  if (btn) btn.textContent = "我知道了，开始第 " + lv + " 关";
+  setTimeout(function(){ openModal("mIce"); }, 300);
+}
 function startLevel(level){
   if (level > TOTAL_LEVELS) level = TOTAL_LEVELS;
   state.level = level;
@@ -1546,13 +1553,7 @@ function startLevel(level){
   updateHint();
   updateHud();
   save();
-  // 第 10 关首次出现冰块时强制教学
-  if (level >= 10 && !localStorage.getItem("gg_ice_seen")){
-    localStorage.setItem("gg_ice_seen", "1");
-    var iceBtn = document.getElementById("btnIceOk");
-    if (iceBtn) iceBtn.textContent = "我知道了，开始第 " + level + " 关";
-    setTimeout(function(){ openModal("mIce"); }, 300);
-  }
+  maybeShowIceTip(level);
   requestAnimationFrame(function(){ layout(); });
 }
 
@@ -2785,6 +2786,7 @@ function boot(){
       updateHud();
       if (state.cols === 0 || !hasMove(state.board, state.cols)) endRound();
     });
+    maybeShowIceTip(state.level);
   } else {
     startLevel(state.level);
   }
