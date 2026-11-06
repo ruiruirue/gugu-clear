@@ -2068,9 +2068,11 @@ function confirmDialog(title, text, okLabel, cb){
    ============================================================ */
 var BOARD_TOPIC = "gumgum_board_7hq4m2x9";
 var BOARD_URL = "https://ntfy.sh/" + BOARD_TOPIC;
+/* 读榜单走 since=最后一条 id 的增量拉取：云端历史快照攒到 1200+ 条（400KB+）后，
+   一次性读全部要 30 秒，会超过请求超时导致榜单读不全。*/
 var BOARD_CACHE = "gumgum_board_v2";
 var BOARD_MAX = 1018;
-var board = { players: [], online: false, at: 0, loading: false, err: "", sig: "", pubAt: 0, fullAt: 0 };
+var board = { players: [], online: false, at: 0, loading: false, err: "", sig: "", pubAt: 0, fullAt: 0, lastId: "" };
 
 function boardMine(){
   var endless = state.level === -1;
@@ -2096,17 +2098,18 @@ function boardLoad(){
     board.sig = (d && d.sig) ? d.sig : "";
     board.pubAt = (d && d.pubAt) ? d.pubAt : 0;
     board.fullAt = (d && d.fullAt) ? d.fullAt : 0;
+    board.lastId = (d && d.lastId) ? d.lastId : "";
   } catch (e){ /* 缓存不可用时忽略 */ }
 }
 function boardCache(){
   try {
-    localStorage.setItem(BOARD_CACHE, JSON.stringify({ players: board.players, at: board.at, sig: board.sig, pubAt: board.pubAt, fullAt: board.fullAt }));
+    localStorage.setItem(BOARD_CACHE, JSON.stringify({ players: board.players, at: board.at, sig: board.sig, pubAt: board.pubAt, fullAt: board.fullAt, lastId: board.lastId }));
   } catch (e){}
 }
 function boardReq(url, opt){
   return new Promise(function(resolve, reject){
     var settled = false;
-    var timer = setTimeout(function(){ if (!settled){ settled = true; reject(new Error("timeout")); } }, 20000);
+    var timer = setTimeout(function(){ if (!settled){ settled = true; reject(new Error("timeout")); } }, 45000);
     fetch(url, opt || {}).then(function(r){
       if (settled) return;
       settled = true; clearTimeout(timer);
@@ -2156,7 +2159,7 @@ function boardMerge(rows, me){
     }
   }
   var list = order.map(function(id){ return map[id]; });
-  // 两个榜各自都有高手，取前 60 时按「两榜里更高的那个分数」排序，避免只玩无限模式的人被截掉
+  // 截榜时按「两榜里更高的那个分数」排序，避免只玩无限模式的人被截掉
   list.sort(function(a, b){
     return (Math.max(b.best, b.ebest) - Math.max(a.best, a.ebest)) || (b.best - a.best) || (b.level - a.level);
   });
@@ -2250,16 +2253,21 @@ function boardSyncRun(force){
     board.loading = false;
     return Promise.resolve();
   }
-  return boardReq(BOARD_URL + "/json?poll=1&since=all")
+  // 只拉新增消息：云端累积的全量分片多了以后，一次性读全部要几十秒
+  var since = (board.lastId && board.players.length) ? board.lastId : "all";
+  return boardReq(BOARD_URL + "/json?poll=1&since=" + encodeURIComponent(since))
     .then(function(r){ return r.text(); })
     .then(function(txt){
       var rows = (board.players || []).slice();
+      var lastId = "";
       (txt || "").split("\n").forEach(function(line){
         line = line.trim();
         if (!line) return;
         var ev;
         try { ev = JSON.parse(line); } catch (e){ return; }
-        if (!ev || ev.event !== "message" || !ev.message) return;
+        if (!ev) return;
+        if (ev.id) lastId = String(ev.id);
+        if (ev.event !== "message" || !ev.message) return;
         var msg;
         try { msg = JSON.parse(ev.message); } catch (e){ return; }
         if (!msg || msg.kind !== "snapshot" || !msg.players) return;
@@ -2267,6 +2275,7 @@ function boardSyncRun(force){
         if (msg.full) board.fullAt = Math.max(board.fullAt || 0, parseInt(msg.t, 10) || 0);
         msg.players.forEach(function(p){ rows.push(p); });
       });
+      if (lastId) board.lastId = lastId;
       board.players = boardMerge(rows, me);
       board.online = true;
       board.err = "";
@@ -2346,19 +2355,18 @@ function renderRank(){
     ? ("我的最高分 " + fmt(mineRow.best) + " · 当前第 " + rank + " 名")
     : ("还没上榜 · 拿到分数才进" + (isEndless ? "无限榜" : "闯关榜"));
 
-  var shown = all.slice(0, 60);
-  if (rank > 60) shown = shown.concat([all[rank - 1]]);
+  var shown = all.slice(0, BOARD_MAX);
 
   if (!all.length){
     $("#rankList").innerHTML = '<li style="list-style:none;padding:20px 4px;text-align:center;font-size:12px;color:var(--ink-3);">' +
       (isEndless ? "无限榜还没有人上榜，玩一局点「立即结算」就能进" : "还没有人上榜，通关一关就能进") + '</li>';
   } else {
-    $("#rankList").innerHTML = shown.map(function(p){
-      var idx = all.indexOf(p);
+    $("#rankList").innerHTML = shown.map(function(p, i){
+      var idx = i;
       var medal = idx < 1 ? "top1" : (idx < 2 ? "top2" : (idx < 3 ? "top3" : ""));
       return '<li class="rankrow ' + (p.me ? "me " : "") + medal + '">' +
         '<span class="rk">' + (idx + 1) + '</span>' +
-        '<img src="assets/gum-' + COLORS[p.avatar] + '.webp" alt="">' +
+        '<img src="assets/gum-' + COLORS[p.avatar] + '.webp" alt="" loading="lazy" decoding="async">' +
         '<span class="rn"><b>' + esc(p.name) + (p.me ? "（我）" : "") + '</b><i>' + (isEndless ? "无限模式" : ("第 " + p.level + " 关")) + '</i></span>' +
         '<span class="rs"><b>' + fmt(p.best) + '</b><i>' + (isEndless ? "无限最高" : "最高分") + '</i></span>' +
         '</li>';
@@ -2367,7 +2375,7 @@ function renderRank(){
 
   var note = $("#rankNote");
   if (note){
-    note.textContent = board.loading ? "正在同步云端榜单…"
+    note.textContent = board.loading ? (board.lastId ? "正在同步云端榜单…" : "首次同步云端榜单，稍等一下…")
       : board.online ? ("云端共榜 · " + (isEndless ? "无限模式" : "闯关模式") + " " + all.length + " 位有成绩的玩家" + (isEndless ? "，结算后自动更新" : "，通关后自动更新"))
       : (board.at ? "暂时连不上云端，先显示上次同步的榜单" : "暂时连不上云端，榜单里先只有你");
   }
