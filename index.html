@@ -1021,7 +1021,9 @@ function findGroup(board, r0, c0, cols){
 }
 
 function hasMove(board, cols){
-  for (var r = 0; r < ROWS; r++){
+  // 只检测玩家看得见、点得到的行：顶部隐藏行里的同色对不算，否则会卡在死局不结算
+  var v0 = visOffset();
+  for (var r = v0; r < ROWS; r++){
     for (var c = 0; c < cols; c++){
       var cell = board[r][c];
       if (!cell) continue;
@@ -1649,6 +1651,8 @@ function startLevel(level){
    ============================================================ */
 function onCellClick(id){
   if (state.ended) return;
+  // 兜底：可见区已经没有可消的一对时，点棋盘就直接结算，别让死局卡住
+  if (state.cols > 0 && !state.busy && !hasMove(state.board, state.cols)){ endRound(); return; }
   var pos = findPos(id);
   if (!pos) return;
 
@@ -2630,7 +2634,7 @@ function restoreSnapshot(d){
   state.replay = (state.level + 1) <= state.unlocked;
   state.carryStart = startScore(state.level);
   state.surplus = state.level > 1 ? Math.max(0, state.carryStart - computeTarget(state.level - 1)) : 0;
-  if (!hasMove(state.board, state.cols)) return false;
+  // 死局局面也照常恢复：开局后由 endRound 兜底结算，避免把已经打出来的分数丢掉
   return true;
 }
 
