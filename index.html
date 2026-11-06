@@ -2175,7 +2175,11 @@ function utf8Bytes(s){
   return n;
 }
 function boardSnapshotParts(){
-  var all = board.players || [];
+  // 0 分的人不进榜，也别占云端体积
+  var all = (board.players || []).filter(function(p){
+    return p && ((parseInt(p.best, 10) || 0) > 0 || (parseInt(p.ebest, 10) || 0) > 0);
+  });
+  if (!all.length) return [];
   var LIMIT = 3500;
   var parts = [], cur = [], i, body;
   for (i = 0; i < all.length; i++){
