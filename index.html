@@ -935,8 +935,9 @@ function rowsForLevel(level){
   if (level <= 10) return 10;
   if (level <= 19) return 12;  // 11-19关：多2行
   if (level <= 29) return 13;  // 20-29关：多3行
-  if (level <= 49) return 14;  // 30-49关：多4行
-  return 15;                   // 50+关：多5行
+  if (level <= 44) return 14;  // 30-44关：多4行
+  if (level <= 49) return 15;  // 45-49关：多5行
+  return 16;                   // 50+关：多6行
 }
 function visOffset(){ return Math.max(0, ROWS - 10); } // 顶部隐藏行数
 var COLORS = ["red","green","blue","yellow","purple","black"];
@@ -1253,7 +1254,9 @@ function coefFor(rate){
 
 function computeTarget(level){
   if (level === 0) return 0;
-  return roundTo(2000 + (level - 1) * 250, 25);
+  var v = 2000 + (level - 1) * 250;
+  if (v > 14250) v = 14250; // 第50关(14250)之后目标不再增长
+  return roundTo(v, 25);
 }
 function cumulativeTarget(level){
   if (level <= 0) return 0;
