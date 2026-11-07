@@ -424,7 +424,7 @@ body:has(#mSetup.on) .cover-acts{animation:none;opacity:0;}
 .rankrow.top1 .rk{color:#D89412;}
 .rankrow.top2 .rk{color:#8C9AA6;}
 .rankrow.top3 .rk{color:#B5794A;}
-.rankrow img{width:26px;height:26px;flex:0 0 26px;border-radius:50%;object-fit:contain;background:#EEF7E2;padding:2px;}
+.rankrow .rkava>img:not(.orn),.rankrow>img{width:26px;height:26px;flex:0 0 26px;border-radius:50%;object-fit:contain;background:#EEF7E2;padding:2px;}
 .rankrow .rn{flex:1 1 auto;min-width:0;}
 .rankrow .rn b{display:block;font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3;}
 .rankrow .rn i{font-style:normal;font-size:9.5px;color:var(--ink-3);white-space:nowrap;}
@@ -432,12 +432,13 @@ body:has(#mSetup.on) .cover-acts{animation:none;opacity:0;}
 .rankrow .rs b{display:block;font-size:13px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.3;}
 .rankrow .rs i{font-style:normal;font-size:9px;color:var(--ink-3);}
 .rankrow.flash{animation:rankFlash .8s ease 2;}
-/* 前三名头像挂件：第一名小皇冠，第二名樱桃发夹，第三名猫耳和尾巴 */
+/* 前三名头像挂件：用的是手绘素材（assets/orn1~3.png），跟着名次走不跟头像颜色 */
 .rankrow .rkava{position:relative;flex:0 0 26px;width:26px;height:26px;}
-.rankrow .orn{position:absolute;pointer-events:none;z-index:2;filter:drop-shadow(0 1px 1px rgba(0,0,0,.12));}
-.rankrow .orn1{width:22px;height:15px;top:-9px;left:50%;margin-left:-11px;}
-.rankrow .orn2{width:17px;height:15px;top:-8px;right:-6px;}
-.rankrow .orn3{width:36px;height:36px;top:-9px;left:-5px;}
+.rankrow .rkava .orn{position:absolute;pointer-events:none;z-index:2;border-radius:0;background:none;padding:0;object-fit:contain;
+  filter:drop-shadow(0 1px 1px rgba(0,0,0,.14));}
+.rankrow .rkava .orn1{width:23px;height:auto;top:-12px;left:50%;margin-left:-11.5px;}
+.rankrow .rkava .orn2{width:18px;height:auto;top:-8px;right:-5px;}
+.rankrow .rkava .orn3{width:35px;height:auto;top:-10px;left:-3px;}
 @keyframes rankFlash{
   0%,100%{background:#FFF6E3;box-shadow:0 0 0 2px rgba(233,192,121,.35) inset;}
   50%{background:#FFE6C6;box-shadow:0 0 0 3px var(--coral) inset;}
@@ -2479,29 +2480,14 @@ function shortNum(n){
 }
 
 var rankTab = "campaign";
-/* 前三名的小挂件（纯 SVG，跟着名次走，不跟头像颜色走）：皇冠 / 樱桃 / 猫耳尾巴 */
-var ORN_SVG = [
-  '<svg class="orn orn1" viewBox="0 0 20 14" aria-hidden="true">' +
-    '<path d="M1 12 L3 3 L7.5 7 L10 1.5 L12.5 7 L17 3 L19 12 Z" fill="#7FC761" stroke="#4E9B3C" stroke-width="1.3" stroke-linejoin="round"/>' +
-    '<rect x="1.5" y="10.8" width="17" height="2.4" rx="1.2" fill="#4E9B3C"/>' +
-  '</svg>',
-  '<svg class="orn orn2" viewBox="0 0 17 15" aria-hidden="true">' +
-    '<path d="M9.6 1.6 Q12.4 6 13 9.2" stroke="#5FA84B" stroke-width="1.5" fill="none" stroke-linecap="round"/>' +
-    '<path d="M9.6 1.6 Q13.6 0.4 16 2.8" stroke="#5FA84B" stroke-width="1.5" fill="none" stroke-linecap="round"/>' +
-    '<path d="M9.6 1.6 Q6 3.8 4.6 8" stroke="#5FA84B" stroke-width="1.5" fill="none" stroke-linecap="round"/>' +
-    '<circle cx="4.2" cy="11" r="3.2" fill="#E8503A"/>' +
-    '<circle cx="12.4" cy="11.4" r="3" fill="#E8503A"/>' +
-    '<circle cx="3.3" cy="10.1" r="1" fill="#FF9B87"/>' +
-    '<circle cx="11.7" cy="10.6" r=".9" fill="#FF9B87"/>' +
-  '</svg>',
-  '<svg class="orn orn3" viewBox="0 0 34 34" aria-hidden="true">' +
-    '<path d="M3.6 15 L6.4 4.2 L14 11.2 Z" fill="#3C3C3C"/>' +
-    '<path d="M18 11.2 L25.6 4.2 L28.4 15 Z" fill="#3C3C3C"/>' +
-    '<path d="M28.6 20.2 Q35.8 22.2 34 29.4 Q33.3 33 27.6 33" stroke="#3C3C3C" stroke-width="3.2" fill="none" stroke-linecap="round"/>' +
-  '</svg>'
+/* 前三名的小挂件：用用户手绘的素材（去掉白底后放在 assets 里） */
+var ORN_IMG = [
+  '<img class="orn orn1" src="assets/orn1.png" alt="">',
+  '<img class="orn orn2" src="assets/orn2.png" alt="">',
+  '<img class="orn orn3" src="assets/orn3.png" alt="">'
 ];
 function rankOrn(i){
-  return i >= 0 && i <= 2 ? ORN_SVG[i] : "";
+  return i >= 0 && i <= 2 ? ORN_IMG[i] : "";
 }
 function renderRank(){
   var isEndless = rankTab === "endless";
