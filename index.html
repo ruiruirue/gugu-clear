@@ -729,7 +729,9 @@ input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;bac
         <div class="saved-id">
           <code id="saveId">GG-0000-0000</code>
           <button class="btn" id="copyId">复制</button>
+          <button class="btn" id="newId">换 ID</button>
         </div>
+        <div class="field-tip">ID 是公开的：知道这个 ID 的人能读到你的云端存档。如果 ID 被别人看到，点「换 ID」换一个，本机进度全部保留，旧 ID 作废。</div>
       </div>
       <div class="field">
         <label for="loadId">输入 ID 读取存档（换设备续玩）</label>
@@ -3191,6 +3193,25 @@ function bindEvents(){
   // 存档
   $("#copyId").addEventListener("click", function(){
     copyText(state.saveId, "存档 ID 已复制");
+  });
+  // 换 ID：ID 是公开的（知道这个 ID 的人能读到云端存档），泄露时换一个新的，本机进度全部保留
+  var newIdArmed = 0;
+  $("#newId").addEventListener("click", function(){
+    var now = Date.now();
+    if (now - newIdArmed > 15000){
+      newIdArmed = now;
+      this.classList.add("active");
+      toast("再点一次「换 ID」确认：进度保留，旧 ID 作废");
+      return;
+    }
+    newIdArmed = 0;
+    this.classList.remove("active");
+    state.saveId = genSaveId();
+    localStorage.removeItem("gg_ava_at");   // 头像按新 ID 重新上报
+    saveNow();                              // 本机存档与云端存档都写到新 ID
+    $("#saveId").textContent = state.saveId;
+    boardSync();                            // 排行榜立刻以新 ID 出现
+    toast("已换新 ID：" + state.saveId + "，进度都还在");
   });
   // 读取存档要点两下「开始」：第一下弹提示，同一个 ID 再点一下才真正读取
   var loadArmed = { id: "", at: 0 };
