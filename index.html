@@ -441,7 +441,13 @@ body:has(#mSetup.on) .cover-acts{animation:none;opacity:0;}
 .rankrow.top3 .rk{color:#B5794A;}
 .rankrow .rkava>img:not(.orn),.rankrow>img{width:26px;height:26px;flex:0 0 26px;border-radius:50%;object-fit:contain;background:#EEF7E2;padding:2px;}
 .rankrow .rn{flex:1 1 auto;min-width:0;}
-.rankrow .rn b{display:block;font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3;}
+.rankrow .rn b{display:flex;flex-wrap:wrap;align-items:center;row-gap:3px;font-size:12.5px;font-weight:700;line-height:1.3;}
+.rankrow .rn b .nm{display:block;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;}
+/* 称号标签：限定 3 个的「第n菇菇终结者」暖金，不限量的「菇独求败」浅绿 */
+.rankrow .rn b .finTag{display:inline-block;flex:0 0 auto;margin-left:4px;padding:1px 6px;border-radius:6px;
+  font-size:9px;font-weight:700;line-height:1.5;white-space:nowrap;letter-spacing:.01em;}
+.rankrow .rn b .finTag.gold{background:#FFF3DC;color:#A9660A;box-shadow:inset 0 0 0 1px #F0D8A8;}
+.rankrow .rn b .finTag.moss{background:#F3F9EA;color:#5C7F3C;box-shadow:inset 0 0 0 1px #DCEAC8;}
 .rankrow .rn i{font-style:normal;font-size:9.5px;color:var(--ink-3);white-space:nowrap;}
 .rankrow .rs{flex:0 0 auto;text-align:right;}
 .rankrow .rs b{display:block;font-size:13px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.3;}
@@ -1296,6 +1302,7 @@ var state = {
   gap: 3,
   player: { name: "咪菇小王子", avatar: 3, custom: "" },
   saveId: "",
+  finRank: 0,
   starred: false,
   sfx: { click: true, pop: true, vol: 45, mute: false }
 };
@@ -1929,6 +1936,8 @@ function endRound(){
     state.earn[state.level] = newEarn;
     if (!isBonus && cleared){
       state.unlocked = Math.max(state.unlocked, state.level + 1);
+      // 通过第 50 关 → 去抢「第n菇菇终结者」的 3 个名额
+      if (state.level === 50) finClaim();
       // 每5关送1个锤子，每10关送1个炸弹
       if (state.level % 5 === 0){
         state.hammers += 1;
@@ -1991,7 +2000,7 @@ function showResult(cleared, passed, diff, replay, before){
     return '<li class="rankrow' + (p.me ? " me" : "") + '">' +
       '<span class="rk">' + (i + 1) + '</span>' +
       '<img src="' + (p.me ? avatarSrc() : (p.ava || ("assets/gum-" + COLORS[p.avatar] + ".webp"))) + '" alt="">' +
-      '<span class="rn"><b>' + esc(p.name) + '</b><i>' + (isEndless ? "无限模式" : ("第 " + p.level + " 关")) + '</i></span>' +
+      '<span class="rn"><b><span class="nm">' + esc(p.name) + '</span>' + finTagHtml(p) + '</b><i>' + (isEndless ? "无限模式" : ("第 " + p.level + " 关")) + '</i></span>' +
       '<span class="rs"><b>' + fmt(p.best) + '</b><i>' + (isEndless ? "无限最高" : "最高分") + '</i></span>' +
       '</li>';
   }).join("");
@@ -2125,6 +2134,13 @@ var BOARD_URL = "https://ntfy.sh/" + BOARD_TOPIC;
    这样别人也能看到你上传的照片，又不至于把榜单快照撑爆 */
 var AVA_TOPIC = "gumgum_ava_v1";
 var AVA_URL = "https://ntfy.sh/" + AVA_TOPIC;
+/* 「第n菇菇终结者」只有 3 个名额，编号必须跨设备、跨玩家统一排序，
+   所以单独一条通道登记：以 ntfy 的服务器时间为达成顺序，按 ID 去重取最早。
+   消息 12 小时会过期，靠任何打开排行榜的人按原始时间代续期（见 finRenew）。*/
+var FIN_TOPIC = "gumgum_fin_v1";
+var FIN_URL = "https://ntfy.sh/" + FIN_TOPIC;
+var FIN_SLOTS = 3;
+var fin = { finalists: [], bySid: {}, at: 0, loading: false };
 /* 读榜单走 since=最后一条 id 的增量拉取：云端历史快照攒到 1200+ 条（400KB+）后，
    一次性读全部要 30 秒，会超过请求超时导致榜单读不全。*/
 var BOARD_CACHE = "gumgum_board_v2";
@@ -2141,7 +2157,8 @@ function boardMine(){
     level: Math.min(TOTAL_LEVELS, Math.max(1, state.unlocked)),
     // 闯关榜只认闯关成绩，无限模式的分数不能算进来
     best: endless ? overallBest() : Math.max(overallBest(), state.score),
-    ebest: Math.max(ebestStored, liveEndless)
+    ebest: Math.max(ebestStored, liveEndless),
+    kill: Math.max(0, parseInt(state.total, 10) || 0)
   };
 }
 function boardLoad(){
@@ -2187,7 +2204,8 @@ function boardRow(p){
     avatar: ((parseInt(p.avatar, 10) || 0) % 6 + 6) % 6,
     level: Math.max(1, Math.min(TOTAL_LEVELS, parseInt(p.level, 10) || 1)),
     best: Math.max(0, parseInt(p.best, 10) || 0),
-    ebest: Math.max(0, parseInt(p.ebest, 10) || 0)
+    ebest: Math.max(0, parseInt(p.ebest, 10) || 0),
+    kill: Math.max(0, parseInt(p.kill, 10) || 0)
   };
 }
 /* 同一个人两个榜的分数分别取最高，再按当前榜排序 */
@@ -2201,6 +2219,7 @@ function boardMerge(rows, me){
     if (r.best > cur.best) cur.best = r.best;
     if (r.ebest > cur.ebest) cur.ebest = r.ebest;
     if (r.level > cur.level) cur.level = r.level;
+    if (r.kill > cur.kill) cur.kill = r.kill;
     cur.name = r.name;
     cur.avatar = r.avatar;
   });
@@ -2212,6 +2231,7 @@ function boardMerge(rows, me){
       cur2.best = Math.max(cur2.best, mine.best);
       cur2.ebest = Math.max(cur2.ebest, mine.ebest);
       cur2.level = Math.max(cur2.level, mine.level);
+      cur2.kill = Math.max(cur2.kill, mine.kill);
       cur2.name = mine.name;
       cur2.avatar = mine.avatar;
     }
@@ -2285,6 +2305,114 @@ function boardPublishMine(){
   });
 }
 var avaPubTimer = null;
+/* ============================================================
+   称号
+   · 第n菇菇终结者：通过第 50 关，按达成时间取前 3 个（独立通道登记）
+   · 菇独求败：累计消灭 ≥ 10000 只（直接用榜单里的累计数判定，不限名额）
+   ============================================================ */
+var FIN_GOAL_KILL = 10000;
+function finReq(url, opt){
+  return fetch(url, opt || {}).then(function(r){
+    if (!r.ok) throw new Error("http " + r.status);
+    return r;
+  });
+}
+function finPost(msg){
+  return finReq(FIN_URL, {
+    method: "POST",
+    body: JSON.stringify(msg),
+    headers: { "Content-Type": "text/plain" }
+  });
+}
+/* 从通道消息里还原出「谁第几个达成」。排序一律用 st（首次达成的服务器时间），
+   没有 st 的老消息用消息自身的 time；续期重发只刷新消息存活时间，不改变排序。 */
+function finParse(txt){
+  var map = {}, rows = [];
+  (txt || "").split("\n").forEach(function(line){
+    line = line.trim();
+    if (!line) return;
+    var ev;
+    try { ev = JSON.parse(line); } catch (e){ return; }
+    if (!ev || ev.event !== "message" || !ev.message) return;
+    var msg;
+    try { msg = JSON.parse(ev.message); } catch (e){ return; }
+    if (!msg || msg.kind !== "fin" || !msg.sid) return;
+    var sk = parseInt(msg.st, 10) || parseInt(ev.time, 10) || 0;
+    var cur = map[msg.sid];
+    if (!cur || sk < cur.sort){ map[msg.sid] = { sid: String(msg.sid), name: String(msg.name || "菇友").slice(0, 8), sort: sk, st: sk }; }
+  });
+  Object.keys(map).forEach(function(k){ rows.push(map[k]); });
+  rows.sort(function(a, b){ return a.sort - b.sort; });
+  return rows.slice(0, FIN_SLOTS).map(function(r, i){
+    return { sid: r.sid, name: r.name, st: r.st, rank: i + 1 };
+  });
+}
+function finApply(list){
+  fin.finalists = list || [];
+  fin.bySid = {};
+  fin.finalists.forEach(function(f){ fin.bySid[f.sid] = f.rank; });
+  fin.at = Date.now();
+  // 自己进了前三：把编号存进存档，换设备读档也带得走
+  var mine = fin.bySid[state.saveId];
+  if (mine && state.finRank !== mine){
+    state.finRank = mine;
+    save();
+  }
+}
+/* 12 小时过期的对抗：任何人打开排行榜，都按原始达成时间把前三条重发一次。
+   同一条最多 6 小时续一次，避免白耗 ntfy 每天 250 条的额度。 */
+function finRenew(){
+  if (!fin.finalists.length) return;
+  var key = "gg_fin_renew", last = 0;
+  try { last = parseInt(localStorage.getItem(key) || "0", 10); } catch (e){}
+  if (Date.now() - last < 6 * 60 * 60 * 1000) return;
+  try { localStorage.setItem(key, String(Date.now())); } catch (e){}
+  fin.finalists.forEach(function(f){
+    finPost({ kind: "fin", sid: f.sid, name: f.name, st: f.st }).catch(function(){});
+  });
+}
+function finSync(){
+  if (fin.loading) return Promise.resolve();
+  if (location.protocol === "file:") return Promise.resolve();
+  fin.loading = true;
+  return finReq(FIN_URL + "/json?poll=1&since=all")
+    .then(function(r){ return r.text(); })
+    .then(function(txt){
+      finApply(finParse(txt));
+      finRenew();
+    })
+    .catch(function(){})
+    .then(function(){
+      fin.loading = false;
+      var el = document.getElementById("mRank");
+      if (el && el.classList.contains("on")) renderRank();
+    });
+}
+/* 通过第 50 关时登记一次。本地只记「已登记」，编号等云端排完序再回填 */
+function finClaim(silent){
+  if (state.finRank) return;
+  if (localStorage.getItem("gg_fin_pub")) return;
+  if (location.protocol === "file:") return;
+  try { localStorage.setItem("gg_fin_pub", "1"); } catch (e){}
+  finPost({ kind: "fin", sid: state.saveId, name: (state.player.name || "菇友").slice(0, 8) })
+    .then(function(){
+      if (!silent) setTimeout(function(){ toast("通过第 50 关！已登记「菇菇终结者」，正在排队确认…"); }, 500);
+      return finSync();
+    })
+    .then(function(){
+      if (silent) return;
+      if (state.finRank) toast("恭喜！你是第 " + state.finRank + " 个通关第 50 关的，获得「第" + state.finRank + "菇菇终结者」");
+      else toast("第 50 关通关，但 3 个终结者名额已被抢完");
+    })
+    .catch(function(){});
+}
+/* 排行榜/小榜里挂在名字后的标签 */
+function finTagHtml(p){
+  var h = "", rank = p.fin || 0, kill = Math.max(0, parseInt(p.kill, 10) || 0);
+  if (rank) h += '<span class="finTag gold">第' + rank + '菇菇终结者</span>';
+  if (kill >= FIN_GOAL_KILL) h += '<span class="finTag moss">菇独求败</span>';
+  return h;
+}
 /* 把本机头像缩成 48px、压到 3400 字符以内再发出去，一条消息就能装下，别人读得到 */
 function avatarForCloud(dataUrl, cb){
   if (!dataUrl){ cb(""); return; }
@@ -2486,12 +2614,15 @@ function rankListData(tab){
       avatar: ((parseInt(p.avatar, 10) || 0) % 6 + 6) % 6,
       level: Math.max(1, parseInt(p.level, 10) || 1),
       best: v,
+      kill: Math.max(0, parseInt(p.kill, 10) || 0),
+      fin: (fin.bySid && fin.bySid[p.sid]) || 0,
       ava: (board.avas && board.avas[p.sid]) || "",
       me: false
     });
   });
   var mineScore = Math.max(0, parseInt(me[key], 10) || 0);
-  if (mineScore) list.push({ sid: me.sid, name: me.name, avatar: me.avatar, level: me.level, best: mineScore, me: true });
+  if (mineScore) list.push({ sid: me.sid, name: me.name, avatar: me.avatar, level: me.level, best: mineScore,
+    kill: me.kill, fin: (fin.bySid && fin.bySid[me.sid]) || state.finRank || 0, me: true });
   list.sort(function(a, b){ return (b.best - a.best) || (b.level - a.level); });
   return list;
 }
@@ -2542,7 +2673,7 @@ function renderRank(){
       return '<li class="rankrow ' + (p.me ? "me " : "") + medal + '">' +
         '<span class="rk">' + (idx + 1) + '</span>' +
         '<span class="rkava">' + rankOrn(idx) + '<img src="' + (p.me ? avatarSrc() : (p.ava || ("assets/gum-" + COLORS[p.avatar] + ".webp"))) + '" alt="" loading="lazy" decoding="async"></span>' +
-        '<span class="rn"><b>' + esc(p.name) + (p.me ? "（我）" : "") + '</b><i>' + (isEndless ? "无限模式" : ("第 " + p.level + " 关")) + '</i></span>' +
+        '<span class="rn"><b><span class="nm">' + esc(p.name) + '</span>' + finTagHtml(p) + '</b><i>' + (isEndless ? "无限模式" : ("第 " + p.level + " 关")) + (p.me ? " · 我" : "") + '</i></span>' +
         '<span class="rs"><b>' + fmt(p.best) + '</b><i>' + (isEndless ? "无限最高" : "最高分") + '</i></span>' +
         '</li>';
     }).join("");
@@ -2559,6 +2690,7 @@ function openRank(tab){
   if (tab) rankTab = tab;
   renderRank();
   openModal("mRank");
+  finSync();            // 称号名单单独通道，先拉一遍标签才能挂上去
   boardSync(true);
 }
 $("#rankTabCampaign").addEventListener("click", function(){ rankTab="campaign"; renderRank(); });
@@ -2664,6 +2796,7 @@ function saveNow(){
       unlocked: state.unlocked,
       earn: state.earn,
       total: state.total,
+      finRank: state.finRank,
       starred: state.starred,
       sfx: state.sfx,
       hammers: state.hammers,
@@ -2732,6 +2865,7 @@ function applySaveData(d){
   state.level = clamp(parseInt(d.level, 10) || 1, 1, TOTAL_LEVELS);
   state.unlocked = clamp(parseInt(d.unlocked, 10) || 1, 1, TOTAL_LEVELS);
   state.total = Math.max(0, parseInt(d.total, 10) || 0);
+  state.finRank = Math.max(0, Math.min(FIN_SLOTS, parseInt(d.finRank, 10) || 0));
   state.earn = {};
   if (d.earn && typeof d.earn === "object"){
     Object.keys(d.earn).forEach(function(k){
@@ -2773,6 +2907,7 @@ function cloudSave(){
       var data = {
         v: 1, id: state.saveId, name: state.player.name, avatar: state.player.avatar,
         level: state.level, unlocked: state.unlocked, earn: state.earn, total: state.total,
+        finRank: state.finRank,
         starred: state.starred, sfx: state.sfx, hammers: state.hammers, bombs: state.bombs,
         snap: { cols: state.cols, score: state.score, target: state.target,
           turn: state.turnCleared, ended: state.ended, cells: serializeBoard() }
@@ -3227,6 +3362,7 @@ function bindEvents(){
     if (saveUploadTimer){ clearTimeout(saveUploadTimer); saveUploadTimer = null; }
     var oldId = state.saveId;
     state.saveId = genSaveId();
+    state.finRank = 0;                      // 终结者按 ID 绑定，换 ID 就随旧 ID 一起作废
     burrySaveId(oldId);                     // 旧 ID 立刻作废，再输入它会提示不存在
     localStorage.removeItem("gg_ava_at");   // 头像按新 ID 重新上报
     saveNow();                              // 本机存档与云端存档都写到新 ID
@@ -3280,6 +3416,7 @@ function bindEvents(){
       v: 1, id: state.saveId, name: state.player.name, avatar: state.player.avatar,
       custom: state.player.custom,
       level: state.level, unlocked: state.unlocked, earn: state.earn, total: state.total,
+      finRank: state.finRank,
       starred: state.starred, sfx: state.sfx, hammers: state.hammers, bombs: state.bombs,
       snap: {
         cols: state.cols, score: state.score, target: state.target,
@@ -3397,6 +3534,8 @@ function boot(){
   }
 
   boardSync();
+  if (state.unlocked > 50) finClaim(true);   // 之前通关过但登记没成功（断网或清过缓存）
+  finSync();                                  // 顺手把云端称号名单与自己编号对一遍
   if (resumed){
     showView("game");
     requestAnimationFrame(function(){
