@@ -466,6 +466,9 @@ body:has(#mSetup.on) .cover-acts{animation:none;opacity:0;}
 }
 .saved-id code{flex:1 1 auto;font-size:14px;letter-spacing:.1em;font-weight:700;font-variant-numeric:tabular-nums;}
 .saved-id .btn{min-height:34px;padding:0 12px;font-size:12px;box-shadow:none;background:#fff;}
+/* 读取按钮要保持橙底白字，别被上一条 .saved-id .btn 的白底盖掉 */
+.saved-id .btn.primary{background:var(--coral);color:#fff;border-color:var(--coral-deep);min-width:64px;flex:0 0 auto;}
+.saved-id .btn.primary.active{background:var(--coral-deep);}
 .code-area{
   width:100%;min-height:88px;resize:vertical;padding:10px 12px;margin-top:8px;
   font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:16px;line-height:1.5;
@@ -698,7 +701,7 @@ input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;bac
         <label for="loadId">输入 ID 读取存档（换设备续玩）</label>
         <div class="saved-id">
           <input id="loadId" maxlength="16" placeholder="GG-XXXX-XXXXX" style="text-transform:uppercase;letter-spacing:.05em;">
-          <button class="btn primary" id="btnLoadId">读取</button>
+          <button class="btn primary" id="btnLoadId">开始</button>
         </div>
       </div>
       <div class="field">
@@ -3019,21 +3022,32 @@ function bindEvents(){
   $("#copyId").addEventListener("click", function(){
     copyText(state.saveId, "存档 ID 已复制");
   });
+  // 读取存档要点两下「开始」：第一下弹提示，同一个 ID 再点一下才真正读取
+  var loadArmed = { id: "", at: 0 };
   $("#btnLoadId").addEventListener("click", function(){
-    var id = $("#loadId").value.trim();
-    if (!id) { toast("请输入存档ID"); return; }
+    var id = $("#loadId").value.trim().toUpperCase();
+    if (!id) { toast("请先输入存档 ID"); return; }
+    var now = Date.now();
+    if (loadArmed.id !== id || now - loadArmed.at > 15000){
+      loadArmed.id = id;
+      loadArmed.at = now;
+      this.classList.add("active");
+      toast("要读取 " + id + " 的存档吗？会覆盖当前进度，再点一次「开始」");
+      return;
+    }
+    loadArmed.id = "";
     var btn = this;
+    btn.classList.remove("active");
     btn.textContent = "读取中…";
     cloudLoadById(id, function(d, err){
-      btn.textContent = "读取";
+      btn.textContent = "开始";
       if (err) { toast(err); return; }
-      confirmDialog("读取存档", "用 ID " + d.id + " 的存档覆盖当前进度？", "读取", function(){
-        applySaveData(d);
-        syncSfxUI();
-        startLevel(state.level);
-        saveNow();
-        toast("已恢复到 " + d.name + " 的进度");
-      });
+      applySaveData(d);
+      syncSfxUI();
+      startLevel(state.level);
+      saveNow();
+      closeModal("mSave");
+      toast("已恢复到 " + d.name + " 的进度");
     });
   });
   $("#nickInput").addEventListener("change", function(){
