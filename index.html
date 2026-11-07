@@ -2574,6 +2574,11 @@ function applySaveData(d){
     }
   }
   state.starred = !!d.starred;
+  // 锤子和炸弹也要跟着存档走，否则刷新一次就被清零
+  if (d.hammers !== undefined && d.hammers !== null) state.hammers = Math.max(0, parseInt(d.hammers, 10) || 0);
+  if (d.bombs !== undefined && d.bombs !== null) state.bombs = Math.max(0, parseInt(d.bombs, 10) || 0);
+  state.hammerMode = false;
+  state.bombMode = false;
   if (d.sfx && typeof d.sfx === "object"){
     state.sfx.click = d.sfx.click !== false;
     state.sfx.pop = d.sfx.pop !== false;
@@ -2593,7 +2598,7 @@ function cloudSave(){
       var data = {
         v: 1, id: state.saveId, name: state.player.name, avatar: state.player.avatar,
         level: state.level, unlocked: state.unlocked, earn: state.earn, total: state.total,
-        starred: state.starred, sfx: state.sfx,
+        starred: state.starred, sfx: state.sfx, hammers: state.hammers, bombs: state.bombs,
         snap: { cols: state.cols, score: state.score, target: state.target,
           turn: state.turnCleared, ended: state.ended, cells: serializeBoard() }
       };
@@ -3049,7 +3054,7 @@ function bindEvents(){
       v: 1, id: state.saveId, name: state.player.name, avatar: state.player.avatar,
       custom: state.player.custom,
       level: state.level, unlocked: state.unlocked, earn: state.earn, total: state.total,
-      starred: state.starred, sfx: state.sfx,
+      starred: state.starred, sfx: state.sfx, hammers: state.hammers, bombs: state.bombs,
       snap: {
         cols: state.cols, score: state.score, target: state.target,
         turn: state.turnCleared, ended: state.ended, cells: serializeBoard()
