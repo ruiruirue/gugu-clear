@@ -431,6 +431,11 @@ body:has(#mSetup.on) .cover-acts{animation:none;opacity:0;}
 .rankrow .rs{flex:0 0 auto;text-align:right;}
 .rankrow .rs b{display:block;font-size:13px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.3;}
 .rankrow .rs i{font-style:normal;font-size:9px;color:var(--ink-3);}
+.rankrow.flash{animation:rankFlash .8s ease 2;}
+@keyframes rankFlash{
+  0%,100%{background:#FFF6E3;box-shadow:0 0 0 2px rgba(233,192,121,.35) inset;}
+  50%{background:#FFE6C6;box-shadow:0 0 0 3px var(--coral) inset;}
+}
 
 /* 地图 */
 .mapbar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:2px;}
@@ -771,7 +776,7 @@ input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;bac
         <button class="btn rank-tab-btn" id="rankTabCampaign" style="flex:1;padding:8px;font-size:13px;">闯关模式</button>
         <button class="btn rank-tab-btn" id="rankTabEndless" style="flex:1;padding:8px;font-size:13px;">无限模式</button>
       </div>
-      <div class="mapbar"><span id="rankMine">我的最高分 0 · 当前第 1 名</span><span>按最高分排名</span></div>
+      <div class="mapbar"><span id="rankMine">我的最高分 0 · 当前第 1 名</span><button class="btn primary" id="btnRankMe" style="flex:0 0 auto;">定位到我</button></div>
       <ol class="ranklist" id="rankList"></ol>
       <p class="sheet-note" id="rankNote">正在同步云端榜单…</p>
     </div>
@@ -2084,7 +2089,6 @@ var BOARD_URL = "https://ntfy.sh/" + BOARD_TOPIC;
 /* 读榜单走 since=最后一条 id 的增量拉取：云端历史快照攒到 1200+ 条（400KB+）后，
    一次性读全部要 30 秒，会超过请求超时导致榜单读不全。*/
 var BOARD_CACHE = "gumgum_board_v2";
-var BOARD_MAX = 1018;
 var board = { players: [], online: false, at: 0, loading: false, err: "", sig: "", pubAt: 0, fullAt: 0, lastId: "" };
 
 function boardMine(){
@@ -2176,7 +2180,7 @@ function boardMerge(rows, me){
   list.sort(function(a, b){
     return (Math.max(b.best, b.ebest) - Math.max(a.best, a.ebest)) || (b.best - a.best) || (b.level - a.level);
   });
-  return list.slice(0, BOARD_MAX);
+  return list;
 }
 /* ntfy 单条正文超过 4KB 就会被转成附件，客户端读不到快照，所以要切片发送 */
 function utf8Bytes(s){
@@ -2369,7 +2373,7 @@ function renderRank(){
     ? ("我的最高分 " + fmt(mineRow.best) + " · 当前第 " + rank + " 名")
     : ("还没上榜 · 拿到分数才进" + (isEndless ? "无限榜" : "闯关榜"));
 
-  var shown = all.slice(0, BOARD_MAX);
+  var shown = all;
 
   if (!all.length){
     $("#rankList").innerHTML = '<li style="list-style:none;padding:20px 4px;text-align:center;font-size:12px;color:var(--ink-3);">' +
@@ -2402,6 +2406,16 @@ function openRank(tab){
 }
 $("#rankTabCampaign").addEventListener("click", function(){ rankTab="campaign"; renderRank(); });
 $("#rankTabEndless").addEventListener("click", function(){ rankTab="endless"; renderRank(); });
+// 榜单可能很长，一键滚到自己那一行并闪一下
+$("#btnRankMe").addEventListener("click", function(){
+  var me = document.querySelector("#rankList .rankrow.me");
+  if (!me){ toast("你还没上榜，拿到分数才会出现在榜单里"); return; }
+  me.scrollIntoView({ block: "center", behavior: "smooth" });
+  me.classList.remove("flash");
+  void me.offsetWidth;
+  me.classList.add("flash");
+  setTimeout(function(){ me.classList.remove("flash"); }, 1800);
+});
 
 /* ============================================================
    关卡地图
