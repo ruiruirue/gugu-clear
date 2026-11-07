@@ -2146,6 +2146,9 @@ var fin = { finalists: [], bySid: {}, at: 0, loading: false };
 /* 读榜单走 since=最后一条 id 的增量拉取：云端历史快照攒到 1200+ 条（400KB+）后，
    一次性读全部要 30 秒，会超过请求超时导致榜单读不全。*/
 var BOARD_CACHE = "gumgum_board_v2";
+/* 云端消息 12 小时过期，榜单只保留最近 12 小时露过面的人：
+   否则老设备的缓存会把早就不上线的人永久挂在榜上，两台设备看到的名单永远对不上 */
+var BOARD_TTL_MS = 12 * 60 * 60 * 1000;
 var board = { players: [], online: false, at: 0, loading: false, err: "", sig: "", pubAt: 0, fullAt: 0, lastId: "", avas: {}, avaLastId: "" };
 
 function boardMine(){
@@ -2160,7 +2163,8 @@ function boardMine(){
     // 闯关榜只认闯关成绩，无限模式的分数不能算进来
     best: endless ? overallBest() : Math.max(overallBest(), state.score),
     ebest: Math.max(ebestStored, liveEndless),
-    kill: Math.max(0, parseInt(state.total, 10) || 0)
+    kill: Math.max(0, parseInt(state.total, 10) || 0),
+    at: Date.now()
   };
 }
 function boardLoad(){
@@ -2168,7 +2172,11 @@ function boardLoad(){
     var raw = localStorage.getItem(BOARD_CACHE);
     if (!raw) return;
     var d = JSON.parse(raw);
-    board.players = (d && d.players) ? d.players : [];
+    // 缓存里早就不上线的人先剔掉，避免首屏闪出上千个早就消失的名字
+    var cut = Date.now() - BOARD_TTL_MS;
+    board.players = ((d && d.players) ? d.players : []).filter(function(p){
+      return p && p.at && p.at > cut;
+    });
     board.at = (d && d.at) ? d.at : 0;
     board.sig = (d && d.sig) ? d.sig : "";
     board.pubAt = (d && d.pubAt) ? d.pubAt : 0;
@@ -2209,7 +2217,9 @@ function boardRow(p){
     level: Math.max(1, Math.min(TOTAL_LEVELS, parseInt(p.level, 10) || 1)),
     best: Math.max(0, parseInt(p.best, 10) || 0),
     ebest: Math.max(0, parseInt(p.ebest, 10) || 0),
-    kill: Math.max(0, parseInt(p.kill, 10) || 0)
+    kill: Math.max(0, parseInt(p.kill, 10) || 0),
+    // 最后一次露面的时间，用来淘汰长期不上线的人
+    at: Math.max(0, parseInt(p.at, 10) || 0)
   };
 }
 /* 同一个人两个榜的分数分别取最高，再按当前榜排序 */
@@ -2224,6 +2234,7 @@ function boardMerge(rows, me){
     if (r.ebest > cur.ebest) cur.ebest = r.ebest;
     if (r.level > cur.level) cur.level = r.level;
     if (r.kill > cur.kill) cur.kill = r.kill;
+    cur.at = Math.max(cur.at, r.at);
     cur.name = r.name;
     cur.avatar = r.avatar;
   });
@@ -2236,11 +2247,16 @@ function boardMerge(rows, me){
       cur2.ebest = Math.max(cur2.ebest, mine.ebest);
       cur2.level = Math.max(cur2.level, mine.level);
       cur2.kill = Math.max(cur2.kill, mine.kill);
+      cur2.at = Math.max(cur2.at || 0, mine.at || 0);
       cur2.name = mine.name;
       cur2.avatar = mine.avatar;
     }
   }
-  var list = order.map(function(id){ return map[id]; });
+  // 只留最近 12 小时还在线的人：缓存里那些早就不玩的人不再参与排序
+  var now = Date.now();
+  var list = order.map(function(id){ return map[id]; }).filter(function(p){
+    return p && p.at && (now - p.at) <= BOARD_TTL_MS;
+  });
   // 截榜时按「两榜里更高的那个分数」排序，避免只玩无限模式的人被截掉
   list.sort(function(a, b){
     return (Math.max(b.best, b.ebest) - Math.max(a.best, a.ebest)) || (b.best - a.best) || (b.level - a.level);
@@ -2260,9 +2276,12 @@ function utf8Bytes(s){
   return n;
 }
 function boardSnapshotParts(){
-  // 0 分的人不进榜，也别占云端体积
+  // 0 分的人不进榜，也别占云端体积；超过 12 小时没露面的也不发（避免把老缓存传给别的设备）
+  var now = Date.now();
   var all = (board.players || []).filter(function(p){
-    return p && ((parseInt(p.best, 10) || 0) > 0 || (parseInt(p.ebest, 10) || 0) > 0);
+    if (!p) return false;
+    if (!(p.at && (now - p.at) <= BOARD_TTL_MS)) return false;
+    return ((parseInt(p.best, 10) || 0) > 0 || (parseInt(p.ebest, 10) || 0) > 0);
   });
   if (!all.length) return [];
   var LIMIT = 3500;
@@ -2549,7 +2568,7 @@ function boardSyncRun(force){
     board.loading = false;
     return Promise.resolve();
   }
-  // 只拉新增消息：云端累积的全量分片多了以后，一次性读全部要几十秒
+  // 只拉新增消息：全量读要 30 秒以上，容易撞 45 秒超时
   boardAvaSync();
   var since = (board.lastId && board.players.length) ? board.lastId : "all";
   return boardReq(BOARD_URL + "/json?poll=1&since=" + encodeURIComponent(since))
@@ -2570,7 +2589,12 @@ function boardSyncRun(force){
         if (!msg || msg.kind !== "snapshot" || !msg.players) return;
         // 记录云端最近一次全量快照的时间，用来判断什么时候该给所有人续期
         if (msg.full) board.fullAt = Math.max(board.fullAt || 0, parseInt(msg.t, 10) || 0);
-        msg.players.forEach(function(p){ rows.push(p); });
+        // 老格式的消息里没有 at，用消息本身的发布时间补上（秒 -> 毫秒）
+        var evAt = (parseInt(ev.time, 10) || 0) * 1000;
+        msg.players.forEach(function(p){
+          if (p && !p.at && evAt) p.at = evAt;
+          rows.push(p);
+        });
       });
       if (lastId) board.lastId = lastId;
       board.players = boardMerge(rows, me);
