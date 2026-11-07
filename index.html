@@ -2785,28 +2785,46 @@ function cloudSave(){
     } catch(e){}
   }, 2000);
 }
+/* 换 ID 时把旧 ID 埋掉：往旧通道追加一条「已作废」记录，
+   读档时看到它就判为不存在，不用等旧快照自然过期 */
+function burrySaveId(id){
+  if (!id || location.protocol === "file:") return;
+  try {
+    fetch(SAVE_BASE + encodeURIComponent(id), {
+      method: "POST",
+      body: b64encode(JSON.stringify({ v: 1, id: id, gone: true, t: Date.now() })),
+      headers: { "Content-Type": "text/plain" }
+    }).catch(function(){});
+  } catch(e){}
+}
 function cloudLoadById(id, cb){
   id = (id || "").trim().toUpperCase();
   if (!id) { cb(null, "请输入ID"); return; }
   fetch(SAVE_BASE + encodeURIComponent(id) + "/json?poll=1&since=all")
     .then(function(r){ return r.ok ? r.text() : null; })
     .then(function(txt){
-      if (!txt) { cb(null, "云端没有这个ID的存档"); return; }
+      if (!txt) { cb(null, "这个 ID 不存在"); return; }
       var lines = txt.trim().split("\n");
-      var last = null;
-      for (var i = lines.length - 1; i >= 0; i--){
+      var last = null, gone = false;
+      // 全量扫一遍：只要这个 ID 有过「已作废」记录，就判它不存在，
+      // 不受网络乱序影响（作废后即使又有旧快照落进来也不会复活）
+      for (var i = 0; i < lines.length; i++){
         try {
           var row = JSON.parse(lines[i]);
-          if (row.event === "message" && row.message){
-            last = row.message;
-            break;
-          }
+          if (row.event !== "message" || !row.message) continue;
+          var raw = row.message.indexOf("GGSAVE1:") === 0 ? row.message.slice(8) : row.message;
+          var probe = JSON.parse(b64decode(raw));
+          if (probe && probe.gone){ gone = true; break; }
+          last = row.message;
         } catch(e){}
       }
-      if (!last) { cb(null, "云端没有这个ID的存档"); return; }
+      if (gone) { cb(null, "这个 ID 不存在"); return; }
+      if (!last) { cb(null, "这个 ID 不存在"); return; }
       try {
         var payload = last.indexOf("GGSAVE1:") === 0 ? last.slice(8) : last;
         var d = JSON.parse(b64decode(payload));
+        // 换 ID 时旧 ID 会被埋掉，看到这条就当作不存在，不用等快照自然过期
+        if (d && d.gone){ cb(null, "这个 ID 不存在"); return; }
         if (!d || d.v !== 1 || !d.id){ cb(null, "存档数据不完整"); return; }
         cb(d, null);
       } catch(e){ cb(null, "存档数据损坏"); }
@@ -3206,12 +3224,15 @@ function bindEvents(){
     }
     newIdArmed = 0;
     this.classList.remove("active");
+    if (saveUploadTimer){ clearTimeout(saveUploadTimer); saveUploadTimer = null; }
+    var oldId = state.saveId;
     state.saveId = genSaveId();
+    burrySaveId(oldId);                     // 旧 ID 立刻作废，再输入它会提示不存在
     localStorage.removeItem("gg_ava_at");   // 头像按新 ID 重新上报
     saveNow();                              // 本机存档与云端存档都写到新 ID
     $("#saveId").textContent = state.saveId;
     boardSync();                            // 排行榜立刻以新 ID 出现
-    toast("已换新 ID：" + state.saveId + "，进度都还在");
+    toast("已换新 ID：" + state.saveId + "，旧 ID 已作废");
   });
   // 读取存档要点两下「开始」：第一下弹提示，同一个 ID 再点一下才真正读取
   var loadArmed = { id: "", at: 0 };
