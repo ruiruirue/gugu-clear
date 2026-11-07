@@ -460,6 +460,17 @@ body:has(#mSetup.on) .cover-acts{animation:none;opacity:0;}
 .rankrow .rkava .orn1{width:23px;height:auto;top:-12px;left:50%;margin-left:-11.5px;}
 .rankrow .rkava .orn2{width:18px;height:auto;top:-8px;right:-5px;}
 .rankrow .rkava .orn3{width:30px;height:auto;top:-9px;left:50%;margin-left:-15px;}
+/* 今日菇菇通缉榜：自己那一行 */
+.today-mine{
+  margin-top:12px;padding:10px 12px;border-radius:14px;
+  background:#FFFDF8;border:1px dashed rgba(42,61,30,.22);
+}
+.today-mine .tm-row{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+.today-mine .tm-row b{font-size:12.5px;font-weight:800;color:var(--ink);}
+.today-mine .tm-row b em{font-style:normal;color:#D05A30;font-variant-numeric:tabular-nums;}
+.today-mine .tm-row span{font-size:11px;color:var(--ink-3);white-space:nowrap;}
+.today-mine p{margin:5px 0 0;font-size:11px;line-height:1.6;color:var(--ink-2);}
+.today-mine p b{color:#3A7D1A;font-weight:800;font-variant-numeric:tabular-nums;}
 @keyframes rankFlash{
   0%,100%{background:#FFF6E3;box-shadow:0 0 0 2px rgba(233,192,121,.35) inset;}
   50%{background:#FFE6C6;box-shadow:0 0 0 3px var(--coral) inset;}
@@ -816,6 +827,30 @@ input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;bac
       <div class="mapbar"><span id="rankMine">我的最高分 0 · 当前第 1 名</span><button class="btn primary" id="btnRankMe" style="flex:0 0 auto;">定位到我</button></div>
       <ol class="ranklist" id="rankList"></ol>
       <p class="sheet-note" id="rankNote">正在同步云端榜单…</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 模态：今日菇菇通缉榜 ===== -->
+<div class="modal" id="mToday" aria-hidden="true">
+  <div class="sheet" style="max-width:420px;">
+    <div class="sheet-head">
+      <h2>今日菇菇通缉榜</h2>
+      <button class="icon-btn js-close" data-target="mToday" aria-label="关闭">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="sheet-body">
+      <ol class="ranklist" id="todayList"></ol>
+      <div class="today-mine">
+        <div class="tm-row">
+          <b id="todayMineTitle">还没上榜</b>
+          <span id="todayMineNum">0 只</span>
+        </div>
+        <p id="todayMineTip">灭 1 只就能进候选</p>
+      </div>
+      <button class="btn leaf" id="todayOk" style="width:100%;margin-top:14px;">知道了</button>
+      <p class="sheet-note" style="text-align:center;">每天 24:00 结算一次 · 只统计当天消灭的菇菇</p>
     </div>
   </div>
 </div>
@@ -1290,6 +1325,9 @@ var state = {
   surplus: 0,
   replay: false,
   total: 0,
+  killToday: 0,      // 今天消灭的只数（每天 0 点自动归零）
+  killPrev: 0,       // 昨天消灭的只数（留给 24:00 结算榜用）
+  killDate: "",      // killToday 所属的日期
   earn: {},          // 每关自己拿到的最高分（不含带进来的起始分）
   turnCleared: 0,
   selected: new Set(),
@@ -1308,6 +1346,39 @@ var state = {
   starred: false,
   sfx: { click: true, pop: true, vol: 45, mute: false }
 };
+
+/* ============ 每日消灭数：0 点自动翻页 ============ */
+function pad2(n){ return n < 10 ? "0" + n : String(n); }
+/* off = 0 今天，off = -1 昨天；用本地日期，和玩家看到的日期一致 */
+function dayKey(off){
+  var d = new Date();
+  if (off) d.setDate(d.getDate() + off);
+  return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+}
+/* 跨天时把今天的数存成「昨天的数」，今天的归零 */
+function syncKillDay(){
+  var t = dayKey(0);
+  if (state.killDate === t) return;
+  var y = dayKey(-1);
+  state.killPrev = (state.killDate === y) ? (state.killToday || 0) : 0;
+  state.killDate = t;
+  state.killToday = 0;
+}
+/* 所有「消灭一只」都要走这里：累计总数 + 当天数一起加 */
+function addKill(n){
+  n = Math.max(0, parseInt(n, 10) || 0);
+  syncKillDay();
+  state.total += n;
+  state.killToday += n;
+}
+/* 一个人「昨天」消灭了多少：上报日期是今天就读 dp，还是昨天就读 dk */
+function ydayKills(p){
+  if (!p) return 0;
+  var t = dayKey(0), y = dayKey(-1);
+  if (p.dd === t) return Math.max(0, parseInt(p.dp, 10) || 0);
+  if (p.dd === y) return Math.max(0, parseInt(p.dk, 10) || 0);
+  return 0;
+}
 
 /* 累计模型：第 n 关的起始分 = 第 1..n-1 关各自最高分之和 */
 function startScore(lv){
@@ -1727,7 +1798,7 @@ function onCellClick(id){
       var gain = 1 * 1 * 3.5;
       state.score += gain;
       state.turnCleared += 1;
-      state.total += 1;
+      addKill(1);
       state.board[pos.r][pos.c] = null;
       sfxPop(1);
       burst(pos.c * (state.cell + state.gap) + state.cell/2, pos.r * (state.cell + state.gap) + state.cell/2, 1);
@@ -1767,7 +1838,7 @@ function onCellClick(id){
       }
       state.score += totalN * totalN * 3.5;
       state.turnCleared += totalN;
-      state.total += totalN;
+      addKill(totalN);
       sfxPop(totalN);
       burst(pos.c * (state.cell + state.gap) + state.cell/2, pos.r * (state.cell + state.gap) + state.cell/2, totalN);
       state.cols = collapse(state.board, state.cols, grp);
@@ -1847,7 +1918,7 @@ function clearGroup(grp){
 
   state.score += gain;
   state.turnCleared += n;
-  state.total += n;
+  addKill(n);
   floatScore(cx, cy, gain);
 
   // 一次消除20+奖励5个锤子+1个炸弹
@@ -2093,6 +2164,8 @@ function openModal(id){
 function closeModal(id){
   var el = document.getElementById(id);
   if (el){ el.classList.remove("on"); el.setAttribute("aria-hidden", "true"); }
+  // 关掉排行榜时补弹今日结算榜（之前因为它开着被跳过了）
+  if (id === "mRank" && typeof maybeTodayBoard === "function") setTimeout(maybeTodayBoard, 0);
 }
 function closeAllModals(){
   $$(".modal").forEach(function(m){ m.classList.remove("on"); m.setAttribute("aria-hidden", "true"); });
@@ -2149,6 +2222,7 @@ var BOARD_CACHE = "gumgum_board_v2";
 var board = { players: [], online: false, at: 0, loading: false, err: "", sig: "", pubAt: 0, fullAt: 0, lastId: "", avas: {}, avaLastId: "" };
 
 function boardMine(){
+  syncKillDay();
   var endless = state.level === -1;
   var ebestStored = parseInt(localStorage.getItem("gg_endless_best") || "0", 10);
   var liveEndless = endless ? Math.round(Math.max(0, state.score - state.carryStart)) : 0;
@@ -2160,7 +2234,10 @@ function boardMine(){
     // 闯关榜只认闯关成绩，无限模式的分数不能算进来
     best: endless ? overallBest() : Math.max(overallBest(), state.score),
     ebest: Math.max(ebestStored, liveEndless),
-    kill: Math.max(0, parseInt(state.total, 10) || 0)
+    kill: Math.max(0, parseInt(state.total, 10) || 0),
+    dk: Math.max(0, parseInt(state.killToday, 10) || 0),
+    dp: Math.max(0, parseInt(state.killPrev, 10) || 0),
+    dd: String(state.killDate || "")
   };
 }
 function boardLoad(){
@@ -2209,7 +2286,10 @@ function boardRow(p){
     level: Math.max(1, Math.min(TOTAL_LEVELS, parseInt(p.level, 10) || 1)),
     best: Math.max(0, parseInt(p.best, 10) || 0),
     ebest: Math.max(0, parseInt(p.ebest, 10) || 0),
-    kill: Math.max(0, parseInt(p.kill, 10) || 0)
+    kill: Math.max(0, parseInt(p.kill, 10) || 0),
+    dk: Math.max(0, parseInt(p.dk, 10) || 0),
+    dp: Math.max(0, parseInt(p.dp, 10) || 0),
+    dd: String(p.dd || "")
   };
 }
 /* 同一个人两个榜的分数分别取最高，再按当前榜排序 */
@@ -2224,6 +2304,12 @@ function boardMerge(rows, me){
     if (r.ebest > cur.ebest) cur.ebest = r.ebest;
     if (r.level > cur.level) cur.level = r.level;
     if (r.kill > cur.kill) cur.kill = r.kill;
+    // 当日消灭数只认最新的那一天；同一天取更大的那个
+    if (r.dd > cur.dd){ cur.dd = r.dd; cur.dk = r.dk; cur.dp = r.dp; }
+    else if (r.dd === cur.dd){
+      if (r.dk > cur.dk) cur.dk = r.dk;
+      if (r.dp > cur.dp) cur.dp = r.dp;
+    }
     cur.name = r.name;
     cur.avatar = r.avatar;
   });
@@ -2236,6 +2322,7 @@ function boardMerge(rows, me){
       cur2.ebest = Math.max(cur2.ebest, mine.ebest);
       cur2.level = Math.max(cur2.level, mine.level);
       cur2.kill = Math.max(cur2.kill, mine.kill);
+      if (mine.dd >= cur2.dd){ cur2.dd = mine.dd; cur2.dk = mine.dk; cur2.dp = mine.dp; }
       cur2.name = mine.name;
       cur2.avatar = mine.avatar;
     }
@@ -2601,8 +2688,90 @@ function boardSyncRun(force){
     .then(function(){
       var el = document.getElementById("mRank");
       if (el && el.classList.contains("on")) renderRank();
+      // 同步完顺手判断一下今天的结算榜要不要弹
+      maybeTodayBoard();
     });
 }
+
+/* ============================================================
+   今日菇菇通缉榜：每天 24:00 结算「刚过去那一天」的前三名
+   数据来自榜单里每个人都带的当天数量，不需要额外通道
+   ============================================================ */
+var TODAY_SHOWN_KEY = "gg_today_shown";
+function todayBoardRows(){
+  var me = boardMine();
+  var list = boardMerge((board.players || []).slice(), me);
+  var rows = [];
+  list.forEach(function(p){
+    var n = ydayKills(p);
+    if (n <= 0) return;
+    rows.push({ sid: p.sid, name: p.name, avatar: p.avatar, level: p.level, n: n, me: p.sid === me.sid });
+  });
+  rows.sort(function(a, b){ return (b.n - a.n) || (b.level - a.level); });
+  return rows;
+}
+function renderTodayBoard(){
+  var rows = todayBoardRows();
+  var top = rows.slice(0, 3);
+  var box = $("#todayList");
+  if (!box) return;
+  if (!top.length){
+    box.innerHTML = '<li style="list-style:none;padding:18px 4px;text-align:center;font-size:12px;color:var(--ink-3);">这一天没有人上榜，明天占个位置？</li>';
+  } else {
+    box.innerHTML = top.map(function(p, i){
+      var medal = i === 0 ? "top1" : (i === 1 ? "top2" : "top3");
+      return '<li class="rankrow ' + medal + (p.me ? " me" : "") + '">' +
+        '<span class="rk">' + (i + 1) + '</span>' +
+        '<span class="rkava">' + rankOrn(i) + '<img src="' +
+          (p.me ? avatarSrc() : ("assets/gum-" + COLORS[p.avatar] + ".webp")) +
+          '" alt="" loading="lazy" decoding="async"></span>' +
+        '<span class="rn"><b>' + esc(p.name) + '</b><i>第 ' + p.level + ' 关</i></span>' +
+        '<span class="rs"><b>' + fmt(p.n) + '</b><i>只</i></span>' +
+      '</li>';
+    }).join("");
+  }
+  // 自己那一行：第几名 + 还差多少能进前三
+  var myIdx = -1, myN = 0;
+  rows.forEach(function(p, i){ if (p.me){ myIdx = i; myN = p.n; } });
+  var title = $("#todayMineTitle"), num = $("#todayMineNum"), tip = $("#todayMineTip");
+  if (!title) return;
+  if (myIdx >= 0 && myIdx <= 2){
+    title.innerHTML = "你排第 <em>" + (myIdx + 1) + "</em> 名";
+    tip.innerHTML = "已经在榜上，守到 24:00 就能拿挂件";
+  } else if (myIdx > 2){
+    title.innerHTML = "你排第 <em>" + (myIdx + 1) + "</em> 名";
+    tip.innerHTML = "还差 <b>" + fmt(rows[2].n - myN + 1) + "</b> 只才能进前三";
+  } else {
+    title.innerHTML = "还没上榜";
+    if (rows.length >= 3){
+      tip.innerHTML = "还差 <b>" + fmt(rows[2].n + 1) + "</b> 只才能进前三";
+    } else {
+      tip.innerHTML = "灭 <b>1</b> 只就能进候选";
+    }
+  }
+  num.textContent = fmt(myN) + " 只";
+}
+/* 每天只自动弹一次；0 点后第一次打开也会补弹 */
+function maybeTodayBoard(){
+  try {
+    if (localStorage.getItem(TODAY_SHOWN_KEY) === dayKey(0)) return false;
+  } catch (e){}
+  if (!(board && board.players && board.players.length)) return false;
+  // 排行榜正开着就先让位，等关掉排行榜再补弹
+  var rk = document.getElementById("mRank");
+  if (rk && rk.classList.contains("on")) return false;
+  renderTodayBoard();
+  openModal("mToday");
+  try { localStorage.setItem(TODAY_SHOWN_KEY, dayKey(0)); } catch (e){}
+  return true;
+}
+/* 页面一直开着：跨到 0 点就自动结算一次 */
+setInterval(function(){
+  var t = dayKey(0);
+  if (t === state.killDate) return;
+  syncKillDay();
+  boardSync().then(function(){ maybeTodayBoard(); });
+}, 30000);
 
 function rankListData(tab){
   tab = tab || rankTab;
@@ -2801,6 +2970,9 @@ function saveNow(){
       unlocked: state.unlocked,
       earn: state.earn,
       total: state.total,
+      killToday: state.killToday,
+      killPrev: state.killPrev,
+      killDate: state.killDate,
       finRank: state.finRank,
       starred: state.starred,
       sfx: state.sfx,
@@ -2870,6 +3042,10 @@ function applySaveData(d){
   state.level = clamp(parseInt(d.level, 10) || 1, 1, TOTAL_LEVELS);
   state.unlocked = clamp(parseInt(d.unlocked, 10) || 1, 1, TOTAL_LEVELS);
   state.total = Math.max(0, parseInt(d.total, 10) || 0);
+  state.killToday = Math.max(0, parseInt(d.killToday, 10) || 0);
+  state.killPrev = Math.max(0, parseInt(d.killPrev, 10) || 0);
+  state.killDate = (typeof d.killDate === "string" && /^\d{4}-\d\d-\d\d$/.test(d.killDate)) ? d.killDate : "";
+  syncKillDay();
   state.finRank = Math.max(0, Math.min(FIN_SLOTS, parseInt(d.finRank, 10) || 0));
   state.earn = {};
   if (d.earn && typeof d.earn === "object"){
@@ -2912,6 +3088,7 @@ function cloudSave(){
       var data = {
         v: 1, id: state.saveId, name: state.player.name, avatar: state.player.avatar,
         level: state.level, unlocked: state.unlocked, earn: state.earn, total: state.total,
+        killToday: state.killToday, killPrev: state.killPrev, killDate: state.killDate,
         finRank: state.finRank,
         starred: state.starred, sfx: state.sfx, hammers: state.hammers, bombs: state.bombs,
         snap: { cols: state.cols, score: state.score, target: state.target,
@@ -3240,6 +3417,7 @@ function bindEvents(){
 
   $("#btnCoverRank").addEventListener("click", function(){ openRank("campaign"); });
   $("#btnIceOk").addEventListener("click", function(){ closeModal("mIce"); });
+  $("#todayOk").addEventListener("click", function(){ closeModal("mToday"); });
 
   // 按钮讲解：点过「我已知晓」之后不再强制弹出
   $("#btnGuideOk").addEventListener("click", function(){
@@ -3295,6 +3473,9 @@ function bindEvents(){
     state.carryStart = 0;
     state.surplus = 0;
     state.total = 0;
+    state.killToday = 0;
+    state.killPrev = 0;
+    state.killDate = dayKey(0);
     saveGame();
     showView("cover");
     toast("已重置，从第1关开始");
@@ -3422,6 +3603,7 @@ function bindEvents(){
       v: 1, id: state.saveId, name: state.player.name, avatar: state.player.avatar,
       custom: state.player.custom,
       level: state.level, unlocked: state.unlocked, earn: state.earn, total: state.total,
+      killToday: state.killToday, killPrev: state.killPrev, killDate: state.killDate,
       finRank: state.finRank,
       starred: state.starred, sfx: state.sfx, hammers: state.hammers, bombs: state.bombs,
       snap: {
@@ -3540,6 +3722,7 @@ function boot(){
   }
 
   boardSync();
+  syncKillDay();                              // 上次关掉可能是昨天，先按今天算
   if (state.unlocked > 50) finClaim(true);   // 之前通关过但登记没成功（断网或清过缓存）
   finSync();                                  // 顺手把云端称号名单与自己编号对一遍
   if (resumed){
