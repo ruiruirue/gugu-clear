@@ -1318,13 +1318,14 @@ function layout(){
   var w = shell.clientWidth, h = shell.clientHeight;
   if (!w || !h) return;
   var gap = w < 430 ? 2 : 3;
-  var cell = Math.floor(Math.min((w - 10 - gap * (COLS - 1)) / COLS, (h - 10 - gap * (ROWS - 1)) / ROWS));
+  var visRows = Math.min(ROWS, 10);
+  var cell = Math.floor(Math.min((w - 10 - gap * (COLS - 1)) / COLS, (h - 10 - gap * (visRows - 1)) / visRows));
   cell = clamp(cell, 20, 62);
   state.cell = cell; state.gap = gap;
   boardEl.style.setProperty("--cell", cell + "px");
   boardEl.style.setProperty("--gap", gap + "px");
   boardEl.style.width = (cell * COLS + gap * (COLS - 1)) + "px";
-  var visRows = Math.min(ROWS, 10); boardEl.style.height = (cell * visRows + gap * (visRows - 1)) + "px";
+  boardEl.style.height = (cell * visRows + gap * (visRows - 1)) + "px";
   buildSlots();
   renderCells(false, true);
 }
