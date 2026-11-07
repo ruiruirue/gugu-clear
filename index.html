@@ -2198,6 +2198,8 @@ function boardReq(url, opt){
 }
 function boardRow(p){
   if (!p || !p.sid) return null;
+  // 冒烟测试专用 ID 直接丢弃，避免早期测试数据长期挂在榜上
+  if (p.sid.indexOf("GG-SMOKE-") === 0) return null;
   return {
     sid: String(p.sid),
     name: String(p.name || "菇友").slice(0, 8),
@@ -2337,6 +2339,7 @@ function finParse(txt){
     var msg;
     try { msg = JSON.parse(ev.message); } catch (e){ return; }
     if (!msg || msg.kind !== "fin" || !msg.sid) return;
+    if (String(msg.sid).indexOf("GG-SMOKE-") === 0) return;
     var sk = parseInt(msg.st, 10) || parseInt(ev.time, 10) || 0;
     var cur = map[msg.sid];
     if (!cur || sk < cur.sort){ map[msg.sid] = { sid: String(msg.sid), name: String(msg.name || "菇友").slice(0, 8), sort: sk, st: sk }; }
