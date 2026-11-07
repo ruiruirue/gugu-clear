@@ -717,7 +717,7 @@ input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;bac
         <label>头像</label>
         <div class="avatar-pick" id="avatarPick"></div>
         <input type="file" id="avaFile" accept="image/*" hidden>
-        <div class="field-tip">点虚线格子可以上传自己的照片，头像只存在这台手机（换设备请用下面的存档码带走）</div>
+        <div class="field-tip">点虚线格子可以上传自己的照片，排行榜上所有人都能看到（换设备请用下面的存档码带走）</div>
       </div>
       <div class="field">
         <label for="codeBox">存档码（换设备时导出、粘贴导入）</label>
@@ -870,7 +870,7 @@ input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;bac
       <div class="field">
         <label>头像</label>
         <div class="avatar-pick" id="setupAvatar"></div>
-        <div class="field-tip">点虚线格子可以上传自己的照片</div>
+        <div class="field-tip">点虚线格子可以上传自己的照片，排行榜上所有人都能看到</div>
       </div>
       <div class="field">
         <label for="setupNick">昵称（最多 8 个字，随时可改）</label>
@@ -1955,7 +1955,7 @@ function showResult(cleared, passed, diff, replay, before){
   var miniHtml = mini.map(function(p, i){
     return '<li class="rankrow' + (p.me ? " me" : "") + '">' +
       '<span class="rk">' + (i + 1) + '</span>' +
-      '<img src="' + (p.me ? avatarSrc() : ("assets/gum-" + COLORS[p.avatar] + ".webp")) + '" alt="">' +
+      '<img src="' + (p.me ? avatarSrc() : (p.ava || ("assets/gum-" + COLORS[p.avatar] + ".webp"))) + '" alt="">' +
       '<span class="rn"><b>' + esc(p.name) + '</b><i>' + (isEndless ? "无限模式" : ("第 " + p.level + " 关")) + '</i></span>' +
       '<span class="rs"><b>' + fmt(p.best) + '</b><i>' + (isEndless ? "无限最高" : "最高分") + '</i></span>' +
       '</li>';
@@ -2086,10 +2086,14 @@ function confirmDialog(title, text, okLabel, cb){
    ============================================================ */
 var BOARD_TOPIC = "gumgum_board_7hq4m2x9";
 var BOARD_URL = "https://ntfy.sh/" + BOARD_TOPIC;
+/* 头像单独一条通道：每个人一条消息（压缩成 48px 小图，正文压在 4KB 以内），
+   这样别人也能看到你上传的照片，又不至于把榜单快照撑爆 */
+var AVA_TOPIC = "gumgum_ava_v1";
+var AVA_URL = "https://ntfy.sh/" + AVA_TOPIC;
 /* 读榜单走 since=最后一条 id 的增量拉取：云端历史快照攒到 1200+ 条（400KB+）后，
    一次性读全部要 30 秒，会超过请求超时导致榜单读不全。*/
 var BOARD_CACHE = "gumgum_board_v2";
-var board = { players: [], online: false, at: 0, loading: false, err: "", sig: "", pubAt: 0, fullAt: 0, lastId: "" };
+var board = { players: [], online: false, at: 0, loading: false, err: "", sig: "", pubAt: 0, fullAt: 0, lastId: "", avas: {}, avaLastId: "" };
 
 function boardMine(){
   var endless = state.level === -1;
@@ -2116,11 +2120,13 @@ function boardLoad(){
     board.pubAt = (d && d.pubAt) ? d.pubAt : 0;
     board.fullAt = (d && d.fullAt) ? d.fullAt : 0;
     board.lastId = (d && d.lastId) ? d.lastId : "";
+    board.avas = (d && d.avas && typeof d.avas === "object") ? d.avas : {};
+    board.avaLastId = (d && d.avaLastId) ? d.avaLastId : "";
   } catch (e){ /* 缓存不可用时忽略 */ }
 }
 function boardCache(){
   try {
-    localStorage.setItem(BOARD_CACHE, JSON.stringify({ players: board.players, at: board.at, sig: board.sig, pubAt: board.pubAt, fullAt: board.fullAt, lastId: board.lastId }));
+    localStorage.setItem(BOARD_CACHE, JSON.stringify({ players: board.players, at: board.at, sig: board.sig, pubAt: board.pubAt, fullAt: board.fullAt, lastId: board.lastId, avas: board.avas, avaLastId: board.avaLastId }));
   } catch (e){}
 }
 function boardReq(url, opt){
@@ -2243,6 +2249,111 @@ function boardPublishMine(){
     headers: { "Content-Type": "text/plain" }
   });
 }
+var avaPubTimer = null;
+/* 把本机头像缩成 48px、压到 3400 字符以内再发出去，一条消息就能装下，别人读得到 */
+function avatarForCloud(dataUrl, cb){
+  if (!dataUrl){ cb(""); return; }
+  var img = new Image();
+  img.onload = function(){
+    try {
+      var s = Math.min(img.width, img.height);
+      var canvas = document.createElement("canvas");
+      canvas.width = 48; canvas.height = 48;
+      var ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, 48, 48);
+      ctx.drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, 48, 48);
+      var q = 0.7, out = canvas.toDataURL("image/jpeg", q);
+      while (out.length > 3400 && q > 0.16){
+        q -= 0.08;
+        out = canvas.toDataURL("image/jpeg", q);
+      }
+      cb(out.length > 3700 ? "" : out);
+    } catch (e){ cb(""); }
+  };
+  img.onerror = function(){ cb(""); };
+  img.src = dataUrl;
+}
+function avaSig(){
+  var c = state.player.custom || "";
+  return state.saveId + "|" + (c ? (c.length + c.slice(0, 24) + c.slice(-24)) : "");
+}
+var avaPubSig = null;
+function maybePublishAva(){
+  if (!state.saveId || location.protocol === "file:") return;
+  var has = !!state.player.custom;
+  var sig = avaSig();
+  var had = localStorage.getItem("gg_ava_had") === "1";
+  // 一直用内置色的玩家不用往通道里塞消息，省额度
+  if (!has && !had){ avaPubSig = sig; return; }
+  var lastAt = parseInt(localStorage.getItem("gg_ava_at") || "0", 10) || 0;
+  // 有照片但超过 6 小时没同步就补发一条：话题里只保留 12 小时，早发的会被清掉
+  var stale = has && (Date.now() - lastAt > 6 * 60 * 60 * 1000);
+  if (sig === avaPubSig && !stale) return;
+  avaPubSig = sig;
+  try {
+    localStorage.setItem("gg_ava_at", String(Date.now()));
+    localStorage.setItem("gg_ava_had", has ? "1" : "0");
+  } catch (e){}
+  boardPublishAva();
+}
+function boardPublishAva(){
+  if (!state.saveId || location.protocol === "file:") return;
+  if (avaPubTimer) clearTimeout(avaPubTimer);
+  var sid = state.saveId;
+  avaPubTimer = setTimeout(function(){
+    avatarForCloud(state.player.custom, function(small){
+      // 换成内置色时 small 为空串，别人那边会退回菇色
+      boardReq(AVA_URL, {
+        method: "POST",
+        body: JSON.stringify({ kind: "ava", sid: sid, c: small || "", t: Date.now() }),
+        headers: { "Content-Type": "text/plain" }
+      }).catch(function(){});
+    });
+  }, 900);
+}
+/* 读所有人的头像：首次只拉最近 30 天，之后按最后一条 id 增量拉 */
+function boardAvaSync(){
+  if (location.protocol === "file:") return Promise.resolve();
+  if (board.avaLoading) return board.avaTask || Promise.resolve();
+  board.avaLoading = true;
+  // ntfy 公共话题里的消息 12 小时就过期，所以每次只读最近 12 小时的头像，
+  // 没读到的就说明对方已经很久没上线，退回菇色（自己的头像由本机保存的图负责）
+  board.avaTask = boardReq(AVA_URL + "/json?poll=1&since=12h")
+    .then(function(r){ return r.text(); })
+    .then(function(txt){
+      var lastId = "", changed = false, seen = {};
+      (txt || "").split("\n").forEach(function(line){
+        line = line.trim();
+        if (!line) return;
+        var ev;
+        try { ev = JSON.parse(line); } catch (e){ return; }
+        if (!ev) return;
+        if (ev.id) lastId = String(ev.id);
+        if (ev.event !== "message" || !ev.message) return;
+        var msg;
+        try { msg = JSON.parse(ev.message); } catch (e){ return; }
+        if (!msg || msg.kind !== "ava" || !msg.sid) return;
+        board.avas = board.avas || {};
+        seen[msg.sid] = 1;
+        if (msg.c && /^data:image\//.test(msg.c)) board.avas[msg.sid] = msg.c;
+        else delete board.avas[msg.sid];
+        changed = true;
+      });
+      Object.keys(board.avas || {}).forEach(function(sid){
+        if (!seen[sid]){ delete board.avas[sid]; changed = true; }
+      });
+      board.avaLastId = lastId;
+      if (changed){
+        boardCache();
+        var el = document.getElementById("mRank");
+        if (el && el.classList.contains("on")) renderRank();
+      }
+    })
+    .catch(function(){})
+    .then(function(){ board.avaLoading = false; });
+  return board.avaTask;
+}
 function boardSync(force){
   force = !!force;
   if (board.loading){
@@ -2271,6 +2382,7 @@ function boardSyncRun(force){
     return Promise.resolve();
   }
   // 只拉新增消息：云端累积的全量分片多了以后，一次性读全部要几十秒
+  boardAvaSync();
   var since = (board.lastId && board.players.length) ? board.lastId : "all";
   return boardReq(BOARD_URL + "/json?poll=1&since=" + encodeURIComponent(since))
     .then(function(r){ return r.text(); })
@@ -2339,6 +2451,7 @@ function rankListData(tab){
       avatar: ((parseInt(p.avatar, 10) || 0) % 6 + 6) % 6,
       level: Math.max(1, parseInt(p.level, 10) || 1),
       best: v,
+      ava: (board.avas && board.avas[p.sid]) || "",
       me: false
     });
   });
@@ -2384,7 +2497,7 @@ function renderRank(){
       var medal = idx < 1 ? "top1" : (idx < 2 ? "top2" : (idx < 3 ? "top3" : ""));
       return '<li class="rankrow ' + (p.me ? "me " : "") + medal + '">' +
         '<span class="rk">' + (idx + 1) + '</span>' +
-        '<img src="' + (p.me ? avatarSrc() : ("assets/gum-" + COLORS[p.avatar] + ".webp")) + '" alt="" loading="lazy" decoding="async">' +
+        '<img src="' + (p.me ? avatarSrc() : (p.ava || ("assets/gum-" + COLORS[p.avatar] + ".webp"))) + '" alt="" loading="lazy" decoding="async">' +
         '<span class="rn"><b>' + esc(p.name) + (p.me ? "（我）" : "") + '</b><i>' + (isEndless ? "无限模式" : ("第 " + p.level + " 关")) + '</i></span>' +
         '<span class="rs"><b>' + fmt(p.best) + '</b><i>' + (isEndless ? "无限最高" : "最高分") + '</i></span>' +
         '</li>';
@@ -2522,6 +2635,7 @@ function saveNow(){
     };
     localStorage.setItem(SAVE_KEY, JSON.stringify(data));
     cloudSave();
+    maybePublishAva();
   } catch (e){ /* 本地存储不可用时静默降级为仅内存 */ }
 }
 function save(){ 
