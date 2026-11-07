@@ -737,7 +737,7 @@ input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;bac
           <button class="btn" id="copyId">复制</button>
           <button class="btn" id="newId">换 ID</button>
         </div>
-        <div class="field-tip">ID 是公开的：知道这个 ID 的人能读到你的云端存档。如果 ID 被别人看到，点「换 ID」换一个，本机进度全部保留，旧 ID 作废。</div>
+        <div class="field-tip">ID 是公开的：知道这个 ID 的人能读到你的云端存档。如果 ID 被别人看到，点「换 ID」换一个，本机进度全部保留，旧 ID 作废；称号（第n菇菇终结者、菇独求败）跟随 ID，换 ID 后也会一起作废。</div>
       </div>
       <div class="field">
         <label for="loadId">输入 ID 读取存档（换设备续玩）</label>
@@ -1014,12 +1014,14 @@ function genBoard(level, cols, rngSeed){
   var colors = genColors(rngSeed);
   var iceRnd = mulberry32(rngSeed * 541 + 99);
   var iceChance = level >= 10 ? Math.min(0.04 + (level - 10) * 0.0012, 0.12) : 0;
+  // 冰块只在玩家看得见的行里生成：藏在顶部隐藏行的冰块会被永久钉住，永远消不掉
+  var iceFrom = visOffset();
   for (var r = 0; r < ROWS; r++){
     var row = [];
     for (var c = 0; c < COLS; c++){
       if (c >= cols) { row.push(null); continue; }
       var cell = { id: nextId++, color: COLORS[colors[r][c]] };
-      if (level >= 10 && iceRnd() < iceChance) cell.ice = true;
+      if (level >= 10 && r >= iceFrom && iceRnd() < iceChance) cell.ice = true;
       row.push(cell);
     }
     board.push(row);
@@ -2987,6 +2989,7 @@ function restoreSnapshot(d){
   if (!snap || !Array.isArray(snap.cells) || snap.ended) return false;
   if (!(snap.cols > 0) || !snap.score) return false;
   var board = [];
+  var visFrom = Math.max(0, (snap.cells.length || 0) - 10); // 顶部隐藏行
   for (var r = 0; r < ROWS; r++){
     var row = [];
     var src = snap.cells[r] || [];
@@ -2996,7 +2999,7 @@ function restoreSnapshot(d){
       var isIce = col.charAt(col.length-1) === "!";
       var color = isIce ? col.slice(0,-1) : col;
       var cell = (color && COLORS.indexOf(color) >= 0) ? { id: nextId++, color: color } : null;
-      if (cell && isIce) cell.ice = true;
+      if (cell && isIce && r >= visFrom) cell.ice = true;   // 旧存档里藏在隐藏行的冰块直接去掉
       row.push(cell);
     }
     board.push(row);
@@ -3357,7 +3360,7 @@ function bindEvents(){
     if (now - newIdArmed > 15000){
       newIdArmed = now;
       this.classList.add("active");
-      toast("再点一次「换 ID」确认：进度保留，旧 ID 作废");
+      toast("再点一次「换 ID」确认：进度保留、旧 ID 作废；称号会跟着作废（称号跟随 ID）");
       return;
     }
     newIdArmed = 0;
