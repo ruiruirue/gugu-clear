@@ -1596,7 +1596,13 @@ function gainLevel(){ return state.sfx.vol / 100 * 0.55; }
 
 function sfxClick(){
   if (!state.sfx.click) return;
-  var ctx = audioCtx(); if (!ctx) return;
+  var ctx = audioCtx();
+  if (!ctx || ctx.state !== "running"){
+    // WebAudio 没解锁（微信/QQ 内置浏览器里很常见）：用 pop 的高音变体给个短促反馈
+    sfxInitPools();
+    poolPlay(sfxPool.pop, state.sfx.vol / 100 * 0.3, 1.7);
+    return;
+  }
   var t = ctx.currentTime;
   var o = ctx.createOscillator(), g = ctx.createGain();
   o.type = "sine";
@@ -1609,74 +1615,82 @@ function sfxClick(){
   o.start(t); o.stop(t + 0.09);
 }
 
-var popSrc = null;
+/* 移动端音效：固定数量的 <audio> 元素池。
+   以前每次播放都 new Audio，一次连消瞬间堆出十几个元素，手机音频通道被打满，
+   后面的播放（尤其 6.6 秒的笑声）就被截断或干脆没声；WebAudio 在微信/QQ 内置浏览器里
+   也常被挂起，导致点击音效时灵时不灵。改成每类音效预建几个元素循环用，并在首次触摸时解锁。 */
+var sfxPool = null, sfxReady = false;
+function sfxInitPools(){
+  if (sfxPool) return;
+  var popEl = document.getElementById("popAudio");
+  var laughEl = document.getElementById("laughAudio");
+  var popUrl = popEl ? popEl.src : "assets/pop.mp3";
+  var laughUrl = laughEl ? laughEl.src : "assets/laugh.mp3";
+  sfxPool = { pop: [], laugh: [] };
+  for (var i = 0; i < 4; i++){
+    var p = new Audio(popUrl);
+    p.preload = "auto";
+    sfxPool.pop.push(p);
+  }
+  for (var j = 0; j < 2; j++){
+    var l = new Audio(laughUrl);
+    l.preload = "auto";
+    sfxPool.laugh.push(l);
+  }
+}
+function unlockSfx(){
+  if (sfxReady) return;
+  sfxReady = true;
+  sfxInitPools();
+  var all = sfxPool.pop.concat(sfxPool.laugh);
+  all.forEach(function(a){
+    if (!a.paused) return;
+    try {
+      a.muted = true;
+      var pr = a.play();
+      var done = function(){ try { a.pause(); a.currentTime = 0; } catch (e){} a.muted = false; };
+      if (pr && pr.then) pr.then(done).catch(function(){ a.muted = false; });
+      else done();
+    } catch (e){ a.muted = false; }
+  });
+  if (!actx){
+    var C = window.AudioContext || window.webkitAudioContext;
+    if (C) actx = new C();
+  }
+  if (actx && actx.state === "suspended"){ try { actx.resume(); } catch (e){} }
+}
+function poolPlay(list, vol, rate){
+  if (!list || !list.length) return;
+  var a = null;
+  for (var i = 0; i < list.length; i++){ if (list[i].paused) { a = list[i]; break; } }
+  if (!a) a = list[0];
+  try { a.currentTime = 0; } catch (e){}
+  a.volume = clamp(vol, 0, 1);
+  if (rate) a.playbackRate = rate;
+  try {
+    var p = a.play();
+    if (p && p.catch) p.catch(function(){});
+  } catch (e){}
+}
 function sfxPop(size){
   if (!state.sfx.pop || state.sfx.mute) return;
-  if (!popSrc) popSrc = document.getElementById("popAudio");
-  if (!popSrc) return;
-  // 每次新建Audio实例，避免快速连消时被浏览器节流
-  var a = new Audio(popSrc.src);
-  a.volume = clamp(state.sfx.vol / 100 * 0.9, 0, 1);
-  a.playbackRate = 1 + (Math.random() * 0.12 - 0.06);
-  try {
-    var p = a.play();
-    if (p && p.catch) p.catch(function(){});
-  } catch (e) {}
+  sfxInitPools();
+  poolPlay(sfxPool.pop, state.sfx.vol / 100 * 0.9, 1 + (Math.random() * 0.12 - 0.06));
 }
-
-/* 笑声音效 158KB，比 pop 大 30 倍。手机上用 <audio> 每次新建实例都要重新解码，
-   弱网或第一次播时经常不出声。改成用 WebAudio 解一次缓存住，之后播放不依赖网络。 */
-var laughBuf = null, laughWant = false;
-function preloadLaugh(){
-  if (laughBuf || laughWant) return;
-  var C = window.AudioContext || window.webkitAudioContext;
-  if (!C) return;
-  var el = document.getElementById("laughAudio");
-  var src = el ? el.src : "assets/laugh.mp3";
-  if (!src) return;
-  if (!actx) actx = new C();
-  laughWant = true;
-  fetch(src).then(function(r){ return r.arrayBuffer(); }).then(function(ab){
-    return new Promise(function(res, rej){
-      try { actx.decodeAudioData(ab, res, rej); } catch (e){ rej(e); }
-    });
-  }).then(function(buf){
-    if (buf) laughBuf = buf;
-    laughWant = false;
-  }).catch(function(){ laughWant = false; });
-}
-var laughNodes = [];   // 必须留引用：不持有的话源节点会被 GC 回收，笑声音放到一半就断了
 function sfxLaugh(){
   if (state.sfx.mute) return;
-  var ctx = audioCtx();
-  if (ctx && laughBuf){
-    var node = ctx.createBufferSource();
-    node.buffer = laughBuf;
-    var g = ctx.createGain();
-    g.gain.value = clamp(state.sfx.vol / 100 * 0.8, 0, 1);
-    node.connect(g); g.connect(ctx.destination);
-    node.onended = function(){
-      for (var i = laughNodes.length - 1; i >= 0; i--) if (laughNodes[i] === node) laughNodes.splice(i, 1);
-    };
-    laughNodes.push(node);
-    node.start(0);
-    return;
-  }
-  // 缓冲还没解好：先用 <audio> 兜一下，同时把解码排上
-  preloadLaugh();
-  var el = document.getElementById("laughAudio");
-  if (!el) return;
-  var a = new Audio(el.src);
-  a.volume = clamp(state.sfx.vol / 100 * 0.8, 0, 1);
-  try {
-    var p = a.play();
-    if (p && p.catch) p.catch(function(){});
-  } catch (e) {}
+  sfxInitPools();
+  poolPlay(sfxPool.laugh, state.sfx.vol / 100 * 0.8, 1);
 }
 
 function sfxPass(){
   if (!state.sfx.click) return;
-  var ctx = audioCtx(); if (!ctx) return;
+  var ctx = audioCtx();
+  if (!ctx || ctx.state !== "running"){
+    sfxInitPools();
+    poolPlay(sfxPool.pop, state.sfx.vol / 100 * 0.45, 1.3);
+    return;
+  }
   var t = ctx.currentTime;
   [523.25, 659.25, 783.99, 1046.5].forEach(function(f, i){
     var o = ctx.createOscillator(), g = ctx.createGain();
@@ -3852,7 +3866,12 @@ function boot(){
   hintEl = $("#hintline");
 
   bindEvents();
-  preloadLaugh();                             // 笑声比 pop 大得多，先解码存着，别等用到才下
+  sfxInitPools();                             // 先把音效元素建好并预载，别等消除时才现做
+  document.addEventListener("pointerdown", unlockSfx, true);
+  document.addEventListener("touchstart", unlockSfx, true);
+  document.addEventListener("visibilitychange", function(){
+    if (!document.hidden && actx && actx.state === "suspended"){ try { actx.resume(); } catch (e){} }
+  });
 
   var saved = loadSave();
   boardLoad();
