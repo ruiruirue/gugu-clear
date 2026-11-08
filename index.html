@@ -2463,6 +2463,44 @@ function finApply(list){
     save();
   }
 }
+/* 补齐：有人早过了第 50 关，但当时那条登记消息被限流或断网丢掉了。
+   任何打开排行榜的设备都可以照着榜单里的关卡替他补一条，不用等他本人上线。
+   两小时最多补一次；名额满了就不补；已经登记过的人跳过。 */
+function finFillGap(){
+  if (fin.loading) return;
+  if (location.protocol === "file:") return;
+  if (!board.players || !board.players.length) return;
+  if (fin.finalists.length >= FIN_SLOTS) return;
+  var now = Date.now();
+  try {
+    var lastFill = parseInt(localStorage.getItem("gg_fin_fill") || "0", 10) || 0;
+    if (now - lastFill < 2 * 60 * 60 * 1000) return;
+  } catch (e){}
+  var missing = [];
+  (board.players || []).forEach(function(p){
+    if (!p || !p.sid) return;
+    if (p.sid === state.saveId) return;
+    if (String(p.sid).indexOf("GG-SMOKE-") === 0) return;
+    if ((parseInt(p.level, 10) || 0) < 51) return;
+    if (fin.bySid[p.sid]) return;
+    missing.push({ sid: String(p.sid), name: String(p.name || "菇友").slice(0, 8), st: Math.floor(now / 1000) });
+  });
+  if (!missing.length) return;
+  if (fin.finalists.length + missing.length > FIN_SLOTS) missing = missing.slice(0, FIN_SLOTS - fin.finalists.length);
+  try { localStorage.setItem("gg_fin_fill", String(now)); } catch (e){}
+  finPost({ kind: "finb", v: 1, list: missing })
+    .then(function(){
+      // 先本地补上让标签立刻出现，下次 finSync 再以云端为准
+      missing.forEach(function(f){
+        if (fin.bySid[f.sid]) return;
+        fin.finalists.push({ sid: f.sid, name: f.name, st: f.st, rank: fin.finalists.length + 1 });
+        fin.bySid[f.sid] = fin.finalists.length;
+      });
+      var el = document.getElementById("mRank");
+      if (el && el.classList.contains("on")) renderRank();
+    })
+    .catch(function(){});
+}
 /* 12 小时过期的对抗：任何人打开排行榜，都按原始达成时间把前十名打包重发一次
    （一条消息装下全部人，别一人一条刷爆通道）。同一条最多 24 小时续一次。 */
 function finRenew(){
@@ -2490,9 +2528,9 @@ function finSync(){
       fin.loading = false;
       var el = document.getElementById("mRank");
       if (el && el.classList.contains("on")) renderRank();
+      finFillGap();
     });
 }
-/* 通过第 50 关时登记一次。本地只记「已登记」，编号等云端排完序再回填 */
 /* 通过第 50 关时登记一次。发成功才记「已登记」；失败则每小时最多重试一次，
    名额已满且自己不在名单里就不再发，免得白耗通道额度。 */
 function finClaim(silent){
@@ -2715,6 +2753,7 @@ function boardSyncRun(force){
       if (el && el.classList.contains("on")) renderRank();
       // 同步完顺手判断一下今天的结算榜要不要弹
       maybeTodayBoard();
+      finFillGap();
     });
 }
 
