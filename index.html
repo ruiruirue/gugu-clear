@@ -448,6 +448,7 @@ body:has(#mSetup.on) .cover-acts{animation:none;opacity:0;}
   font-size:9px;font-weight:700;line-height:1.5;white-space:nowrap;letter-spacing:.01em;}
 .rankrow .rn b .finTag.gold{background:#FFF3DC;color:#A9660A;box-shadow:inset 0 0 0 1px #F0D8A8;}
 .rankrow .rn b .finTag.moss{background:#F3F9EA;color:#5C7F3C;box-shadow:inset 0 0 0 1px #DCEAC8;}
+.rankrow .rn b .finTag.teal{background:#EAF4F0;color:#2B6A57;box-shadow:inset 0 0 0 1px #CFE6DC;}
 .rankrow .rn i{font-style:normal;font-size:9.5px;color:var(--ink-3);white-space:nowrap;}
 .rankrow .rs{flex:0 0 auto;text-align:right;}
 .rankrow .rs b{display:block;font-size:13px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.3;}
@@ -958,6 +959,52 @@ input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;bac
 
 <div class="toast-wrap" id="toastWrap"></div>
 
+<!-- ===== 模态：获得称号 ===== -->
+<style>
+#mTitle{z-index:80;align-items:center;padding:22px;background:rgba(38,58,28,.34);}
+.tcard{position:relative;width:100%;max-width:330px;overflow:hidden;text-align:center;
+  background:linear-gradient(180deg,#FFFBEF 0%,#FFFDFA 30%,#FFFDF8 100%);
+  border:1px solid #EEDFBB;border-radius:22px;padding:20px 20px 18px;
+  box-shadow:0 20px 44px -20px rgba(70,52,20,.45);animation:sheetPop .22s cubic-bezier(.22,1,.36,1);}
+.tkicker{position:relative;display:inline-block;padding:3px 11px;border-radius:999px;
+  background:#FFF7E2;border:1px solid #F1DEB7;
+  font-size:10px;font-weight:800;letter-spacing:.2em;color:#A9822C;}
+.tbadge{position:relative;width:92px;height:92px;margin:15px auto 11px;border-radius:50%;
+  background:radial-gradient(circle at 50% 34%, #FFF4D6, #F8E2AC 68%, #EDD090 100%);
+  box-shadow:0 0 0 4px #FFFDF8, 0 0 0 5.5px #EEE0BE, 0 9px 20px -9px rgba(150,116,42,.62);
+  display:flex;align-items:center;justify-content:center;}
+.tbadge span{font-family:var(--font-text);font-size:31px;font-weight:800;color:#8B6413;text-shadow:0 1px 0 #FFF7E1;}
+.tbadge>img{position:absolute;width:50px;top:-21px;left:50%;margin-left:-25px;
+  filter:drop-shadow(0 2px 2px rgba(0,0,0,.13));}
+.tname{position:relative;font-family:var(--font-round);font-size:25px;font-weight:800;
+  color:#3E2D12;letter-spacing:.07em;line-height:1.3;}
+.tdesc{position:relative;margin-top:6px;font-size:12.5px;line-height:1.6;color:#7C6A4A;}
+.tdesc b{color:#B07C1B;font-weight:800;font-variant-numeric:tabular-nums;}
+.tline{position:relative;margin:15px 0 12px;height:1px;
+  background:linear-gradient(90deg,rgba(238,223,188,0),#EEDFBC,rgba(238,223,188,0));}
+.tdemo{position:relative;padding:9px 10px;border-radius:12px;
+  background:#F4FAEA;border:1px solid rgba(42,61,30,.10);text-align:left;}
+.tdemo .rn b{display:flex;flex-wrap:wrap;align-items:center;row-gap:3px;font-size:12.5px;font-weight:700;line-height:1.3;}
+.tdemo .nm{display:block;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;color:#2A3D1E;}
+.tdemo .finTag{display:inline-block;flex:0 0 auto;margin-left:4px;padding:1px 6px;border-radius:6px;
+  font-size:9px;font-weight:700;line-height:1.5;white-space:nowrap;letter-spacing:.01em;}
+.tdemo .finTag.gold{background:#FFF3DC;color:#A9660A;box-shadow:inset 0 0 0 1px #F0D8A8;}
+.tdemo .finTag.moss{background:#F3F9EA;color:#5C7F3C;box-shadow:inset 0 0 0 1px #DCEAC8;}
+.tdemo .finTag.teal{background:#EAF4F0;color:#2B6A57;box-shadow:inset 0 0 0 1px #CFE6DC;}
+.tbtn{position:relative;margin-top:14px;width:100%;min-height:44px;font-size:14px;}
+</style>
+<div class="modal" id="mTitle" aria-hidden="true">
+  <div class="tcard">
+    <div class="tkicker">解锁新称号</div>
+    <div class="tbadge"><img src="assets/orn1.png" alt=""><span>函</span></div>
+    <div class="tname" id="ttName">菇处不胜函</div>
+    <div class="tdesc" id="ttDesc">一次消除拿到 <b>10,000</b> 分</div>
+    <div class="tline"></div>
+    <div class="tdemo" id="ttDemo"></div>
+    <button class="btn leaf tbtn" type="button" id="ttOk">收下</button>
+  </div>
+</div>
+
 <!-- 特效素材源：脚本克隆这张图做四散炸开，源图本身不显示 -->
 <div hidden>
   <img id="fxProto" src="assets/fx-horizon.webp" alt="">
@@ -1354,6 +1401,7 @@ var state = {
   saveId: "",
   finRank: 0,
   starred: false,
+  titles: {},        // 一次性成就称号：bush = 菇处不胜函（一次消除 ≥ 10000 分）
   sfx: { click: true, pop: true, vol: 45, mute: false }
 };
 
@@ -1981,6 +2029,7 @@ function clearGroup(grp){
   state.turnCleared += n;
   addKill(n);
   floatScore(cx, cy, gain);
+  if (gain >= TITLE_BUSH_GAIN) grantTitle("bush");
 
   // 一次消除20+奖励5个锤子+1个炸弹
   if (n >= 20){
@@ -2179,20 +2228,28 @@ function showResult(cleared, passed, diff, replay, before){
 
   $("#resultBody").innerHTML = body;
   openModal("mResult");
+  // 本关刚解锁称号的话，直接盖在结算窗上面弹一次（点「收下」就回到结算）
+  if (titlePend){
+    if (titleTimer) clearTimeout(titleTimer);
+    setTimeout(function(){ if (titlePend) showTitleModal(titlePend); }, 260);
+  }
 
   var next = $("#rsNext");
   if (next) next.addEventListener("click", function(){
     closeModal("mResult");
+    flushTitlePend();
     if (isBonus){ startLevel(Math.max(1, state.unlocked - 1)); }
     else { startLevel(state.level + 1); }
   });
   var retry = $("#rsRetry");
   if (retry) retry.addEventListener("click", function(){
     closeModal("mResult");
+    flushTitlePend();
     startLevel(state.level);
   });
   $("#rsRank").addEventListener("click", function(){
     closeModal("mResult");
+    flushTitlePend();
     openRank(isEndless ? "endless" : "campaign");
   });
 }
@@ -2300,7 +2357,8 @@ function boardMine(){
     kill: Math.max(0, parseInt(state.total, 10) || 0),
     dk: Math.max(0, parseInt(state.killToday, 10) || 0),
     dp: Math.max(0, parseInt(state.killPrev, 10) || 0),
-    dd: String(state.killDate || "")
+    dd: String(state.killDate || ""),
+    tt: titlesMask()
   };
 }
 function boardLoad(){
@@ -2352,7 +2410,8 @@ function boardRow(p){
     kill: Math.max(0, parseInt(p.kill, 10) || 0),
     dk: Math.max(0, parseInt(p.dk, 10) || 0),
     dp: Math.max(0, parseInt(p.dp, 10) || 0),
-    dd: String(p.dd || "")
+    dd: String(p.dd || ""),
+    tt: Math.max(0, parseInt(p.tt, 10) || 0)
   };
 }
 /* 同一个人两个榜的分数分别取最高，再按当前榜排序 */
@@ -2367,6 +2426,7 @@ function boardMerge(rows, me){
     if (r.ebest > cur.ebest) cur.ebest = r.ebest;
     if (r.level > cur.level) cur.level = r.level;
     if (r.kill > cur.kill) cur.kill = r.kill;
+    cur.tt = (cur.tt | 0) | (r.tt | 0);
     // 当日消灭数只认最新的那一天；同一天取更大的那个
     if (r.dd > cur.dd){ cur.dd = r.dd; cur.dk = r.dk; cur.dp = r.dp; }
     else if (r.dd === cur.dd){
@@ -2385,6 +2445,7 @@ function boardMerge(rows, me){
       cur2.ebest = Math.max(cur2.ebest, mine.ebest);
       cur2.level = Math.max(cur2.level, mine.level);
       cur2.kill = Math.max(cur2.kill, mine.kill);
+      cur2.tt = (cur2.tt | 0) | (mine.tt | 0);
       if (mine.dd >= cur2.dd){ cur2.dd = mine.dd; cur2.dk = mine.dk; cur2.dp = mine.dp; }
       cur2.name = mine.name;
       cur2.avatar = mine.avatar;
@@ -2465,6 +2526,8 @@ var avaPubTimer = null;
    · 菇独求败：累计消灭 ≥ 10000 只（直接用榜单里的累计数判定，不限名额）
    ============================================================ */
 var FIN_GOAL_KILL = 10000;
+/* 一次性成就称号：一次消除（点一下消掉的那一组）得分门槛 */
+var TITLE_BUSH_GAIN = 10000;
 function finReq(url, opt){
   opt = opt || {};
   var ms = opt.timeout || 25000;
@@ -2682,7 +2745,60 @@ function finTagHtml(p){
   if (rank === 1 || rank === 2) h += '<span class="finTag gold">第' + rank + '菇菇终结者</span>';
   else if (rank) h += '<span class="finTag gold">菇菇终结者</span>';
   if (kill >= FIN_GOAL_KILL) h += '<span class="finTag moss">菇独求败</span>';
+  if ((parseInt(p.tt, 10) || 0) & 1) h += '<span class="finTag teal">菇处不胜函</span>';
   return h;
+}
+
+/* ============ 一次性成就称号 ============ */
+function titleHas(k){ return !!(state.titles && state.titles[k]); }
+function titlesMask(){ return (titleHas("bush") ? 1 : 0); }
+function titleName(k){ return k === "bush" ? "菇处不胜函" : ""; }
+var titlePend = "", titleTimer = null, titleTries = 0;
+/* 拿到称号：记进存档、飘一条提示，随后弹窗（别的弹窗开着就先压着，等它关掉再弹） */
+function grantTitle(k){
+  if (titleHas(k)) return false;
+  if (!state.titles) state.titles = {};
+  state.titles[k] = 1;
+  save();
+  toast("解锁称号：" + titleName(k));
+  titlePend = k;
+  titleTries = 0;
+  if (titleTimer) clearTimeout(titleTimer);
+  titleTimer = setTimeout(tryShowTitle, 420);
+  return true;
+}
+function tryShowTitle(){
+  if (!titlePend) return;
+  var blocked = null;
+  $$(".modal.on").forEach(function(m){ if (m.id !== "mTitle") blocked = m; });
+  if (blocked){
+    if (titleTries++ < 30){ titleTimer = setTimeout(tryShowTitle, 600); }
+    return;                       // 结算窗一关，flushTitlePend 会立刻接手
+  }
+  showTitleModal(titlePend);
+}
+function flushTitlePend(){
+  if (!titlePend) return;
+  titleTries = 0;
+  if (titleTimer) clearTimeout(titleTimer);
+  titleTimer = setTimeout(tryShowTitle, 160);
+}
+function showTitleModal(k){
+  var n = $("#ttName"), d = $("#ttDesc"), dm = $("#ttDemo"), m = $("#mTitle");
+  if (!n || !d || !dm || !m) return;
+  n.textContent = titleName(k);
+  d.innerHTML = '一次消除拿到 <b>' + fmt(TITLE_BUSH_GAIN) + '</b> 分';
+  dm.innerHTML = '<div class="rn"><b><span class="nm">' + esc(state.player.name || "咪菇小王子") +
+    '</span>' + finTagHtml({ fin: state.finRank, kill: state.total, tt: titlesMask(), me: true }) + '</b></div>';
+  m.classList.add("on");
+  m.setAttribute("aria-hidden", "false");
+  sfxPass();
+}
+function closeTitleModal(){
+  var m = $("#mTitle");
+  if (m){ m.classList.remove("on"); m.setAttribute("aria-hidden", "true"); }
+  titlePend = "";
+  if (titleTimer) clearTimeout(titleTimer);
 }
 /* 把本机头像缩成 48px、压到 3400 字符以内再发出去，一条消息就能装下，别人读得到 */
 function avatarForCloud(dataUrl, cb){
@@ -2969,6 +3085,7 @@ function rankListData(tab){
       level: Math.max(1, parseInt(p.level, 10) || 1),
       best: v,
       kill: Math.max(0, parseInt(p.kill, 10) || 0),
+      tt: Math.max(0, parseInt(p.tt, 10) || 0),
       fin: (fin.bySid && fin.bySid[p.sid]) || 0,
       ava: (board.avas && board.avas[p.sid]) || "",
       me: false
@@ -2976,7 +3093,8 @@ function rankListData(tab){
   });
   var mineScore = Math.max(0, parseInt(me[key], 10) || 0);
   if (mineScore) list.push({ sid: me.sid, name: me.name, avatar: me.avatar, level: me.level, best: mineScore,
-    kill: me.kill, fin: (fin.bySid && fin.bySid[me.sid]) || state.finRank || 0, me: true });
+    kill: me.kill, tt: Math.max(0, parseInt(me.tt, 10) || 0),
+    fin: (fin.bySid && fin.bySid[me.sid]) || state.finRank || 0, me: true });
   list.sort(function(a, b){ return (b.best - a.best) || (b.level - a.level); });
   return list;
 }
@@ -3154,6 +3272,7 @@ function saveNow(){
       killPrev: state.killPrev,
       killDate: state.killDate,
       finRank: state.finRank,
+      titles: state.titles,
       starred: state.starred,
       sfx: state.sfx,
       hammers: state.hammers,
@@ -3227,6 +3346,10 @@ function applySaveData(d){
   state.killDate = (typeof d.killDate === "string" && /^\d{4}-\d\d-\d\d$/.test(d.killDate)) ? d.killDate : "";
   syncKillDay();
   state.finRank = Math.max(0, Math.min(FIN_SLOTS, parseInt(d.finRank, 10) || 0));
+  state.titles = {};
+  if (d.titles && typeof d.titles === "object"){
+    if (d.titles.bush) state.titles.bush = 1;
+  }
   state.earn = {};
   if (d.earn && typeof d.earn === "object"){
     Object.keys(d.earn).forEach(function(k){
@@ -3270,6 +3393,7 @@ function cloudSave(){
         level: state.level, unlocked: state.unlocked, earn: state.earn, total: state.total,
         killToday: state.killToday, killPrev: state.killPrev, killDate: state.killDate,
         finRank: state.finRank,
+        titles: state.titles,
         starred: state.starred, sfx: state.sfx, hammers: state.hammers, bombs: state.bombs,
         snap: { cols: state.cols, score: state.score, target: state.target,
           turn: state.turnCleared, ended: state.ended, cells: serializeBoard() }
@@ -3598,6 +3722,7 @@ function bindEvents(){
   $("#btnCoverRank").addEventListener("click", function(){ openRank("campaign"); });
   $("#btnIceOk").addEventListener("click", function(){ closeModal("mIce"); });
   $("#todayOk").addEventListener("click", function(){ closeModal("mToday"); });
+  $("#ttOk").addEventListener("click", function(){ closeTitleModal(); });
 
   // 按钮讲解：点过「我已知晓」之后不再强制弹出
   $("#btnGuideOk").addEventListener("click", function(){
