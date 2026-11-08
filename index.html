@@ -2216,6 +2216,7 @@ var AVA_URL = "https://ntfy.sh/" + AVA_TOPIC;
 var FIN_TOPIC = "gumgum_fin_v1";
 var FIN_URL = "https://ntfy.sh/" + FIN_TOPIC;
 var FIN_SLOTS = 10;
+var FIN_CACHE = "gumgum_fin_cache";
 var fin = { finalists: [], bySid: {}, at: 0, loading: false };
 /* 读榜单走 since=最后一条 id 的增量拉取：云端历史快照攒到 1200+ 条（400KB+）后，
    一次性读全部要 30 秒，会超过请求超时导致榜单读不全。*/
@@ -2404,9 +2405,18 @@ var avaPubTimer = null;
    ============================================================ */
 var FIN_GOAL_KILL = 10000;
 function finReq(url, opt){
-  return fetch(url, opt || {}).then(function(r){
+  opt = opt || {};
+  var ms = opt.timeout || 25000;
+  var ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+  if (ctrl){ opt.signal = ctrl.signal; }
+  var timer = setTimeout(function(){ if (ctrl){ try { ctrl.abort(); } catch (e){} } }, ms);
+  return fetch(url, opt).then(function(r){
+    clearTimeout(timer);
     if (!r.ok) throw new Error("http " + r.status);
     return r;
+  }, function(e){
+    clearTimeout(timer);
+    throw e;
   });
 }
 function finPost(msg){
@@ -2446,16 +2456,50 @@ function finParse(txt){
     if (!cur || sk < cur.sort){ map[msg.sid] = { sid: String(msg.sid), name: String(msg.name || "菇友").slice(0, 8), sort: sk, st: sk }; }
   });
   Object.keys(map).forEach(function(k){ rows.push(map[k]); });
-  rows.sort(function(a, b){ return a.sort - b.sort; });
+  return rows;
+}
+/* 按 st 升序排出前十名并带编号。云端刚读到的和本地缓存合并后统一走这里。 */
+function finRankList(list){
+  var map = {};
+  (list || []).forEach(function(f){
+    if (!f || !f.sid) return;
+    if (String(f.sid).indexOf("GG-SMOKE-") === 0) return;
+    var st = parseInt(f.st, 10) || 0;
+    if (!map[f.sid] || st < map[f.sid].st){
+      map[f.sid] = { sid: String(f.sid), name: String(f.name || "菇友").slice(0, 8), st: st };
+    }
+  });
+  var rows = Object.keys(map).map(function(k){ return map[k]; });
+  rows.sort(function(a, b){ return a.st - b.st; });
   return rows.slice(0, FIN_SLOTS).map(function(r, i){
     return { sid: r.sid, name: r.name, st: r.st, rank: i + 1 };
   });
+}
+/* 称号名单存一份在本地：通道消息 12 小时过期、攒到几百条时读取还会超时，
+   只靠云端的话一次读失败称号就全部消失。本地这份不会被清掉。 */
+function finCacheLoad(){
+  try {
+    var d = JSON.parse(localStorage.getItem(FIN_CACHE) || "null");
+    if (!d || !d.list) return [];
+    return d.list.filter(function(f){ return f && f.sid; }).map(function(f){
+      return { sid: String(f.sid), name: String(f.name || "菇友"), st: parseInt(f.st, 10) || 0 };
+    });
+  } catch (e){ return []; }
+}
+function finCacheSave(){
+  try {
+    if (!fin.finalists.length) return;
+    localStorage.setItem(FIN_CACHE, JSON.stringify({ at: Date.now(), list: fin.finalists.map(function(f){
+      return { sid: f.sid, name: f.name, st: f.st };
+    }) }));
+  } catch (e){}
 }
 function finApply(list){
   fin.finalists = list || [];
   fin.bySid = {};
   fin.finalists.forEach(function(f){ fin.bySid[f.sid] = f.rank; });
   fin.at = Date.now();
+  finCacheSave();
   // 自己进了前十：把编号存进存档，换设备读档也带得走
   var mine = fin.bySid[state.saveId];
   if (mine && state.finRank !== mine){
@@ -2491,11 +2535,8 @@ function finFillGap(){
   finPost({ kind: "finb", v: 1, list: missing })
     .then(function(){
       // 先本地补上让标签立刻出现，下次 finSync 再以云端为准
-      missing.forEach(function(f){
-        if (fin.bySid[f.sid]) return;
-        fin.finalists.push({ sid: f.sid, name: f.name, st: f.st, rank: fin.finalists.length + 1 });
-        fin.bySid[f.sid] = fin.finalists.length;
-      });
+      var merged = fin.finalists.map(function(f){ return { sid: f.sid, name: f.name, st: f.st }; }).concat(missing);
+      finApply(finRankList(merged));
       var el = document.getElementById("mRank");
       if (el && el.classList.contains("on")) renderRank();
     })
@@ -2517,11 +2558,25 @@ function finSync(){
   if (fin.loading) return Promise.resolve();
   if (location.protocol === "file:") return Promise.resolve();
   fin.loading = true;
-  return finReq(FIN_URL + "/json?poll=1&since=all")
+  // 先用本地缓存把称号显示出来，不等网络
+  var cached = finCacheLoad();
+  if (!fin.finalists.length && cached.length) finApply(finRankList(cached));
+  /* 先读最近 6 小时（消息少、快），读不到再退回全量。
+     通道里攒到几百条时全量要十几秒，手机容易超时，表现就是称号一下全没了。 */
+  return finReq(FIN_URL + "/json?poll=1&since=6h")
     .then(function(r){ return r.text(); })
     .then(function(txt){
-      finApply(finParse(txt));
-      finRenew();
+      var rows = finParse(txt);
+      if (rows.length) return rows;
+      return finReq(FIN_URL + "/json?poll=1&since=all")
+        .then(function(r){ return r.text(); })
+        .then(function(t2){ return finParse(t2); });
+    })
+    .then(function(rows){
+      if (rows && rows.length){
+        finApply(finRankList(rows.concat(finCacheLoad())));
+        finRenew();
+      }
     })
     .catch(function(){})
     .then(function(){
