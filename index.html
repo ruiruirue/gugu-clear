@@ -2640,26 +2640,36 @@ function finFillGap(){
   if (!board.players || !board.players.length) return;
   if (fin.finalists.length >= FIN_SLOTS) return;
   var now = Date.now();
-  try {
-    var lastFill = parseInt(localStorage.getItem("gg_fin_fill") || "0", 10) || 0;
-    if (now - lastFill < 2 * 60 * 60 * 1000) return;
-  } catch (e){}
   var missing = [];
   (board.players || []).forEach(function(p){
     if (!p || !p.sid) return;
-    if (p.sid === state.saveId) return;
     if (String(p.sid).indexOf("GG-SMOKE-") === 0) return;
     if ((parseInt(p.level, 10) || 0) < 51) return;
     if (fin.bySid[p.sid]) return;
-    missing.push({ sid: String(p.sid), name: String(p.name || "菇友").slice(0, 8), st: Math.floor(now / 1000) });
+    // 自己也算进来：以前只补别人，自己登记丢了就永远补不回来
+    missing.push({ sid: String(p.sid), name: String(p.name || "菇友").slice(0, 8),
+      st: Math.floor(now / 1000), self: p.sid === state.saveId });
   });
   if (!missing.length) return;
+  try {
+    // 补别人 2 小时一次；补自己 1 小时一次，丢了要尽快找回来
+    var lastFill = parseInt(localStorage.getItem("gg_fin_fill") || "0", 10) || 0;
+    if (now - lastFill < 2 * 60 * 60 * 1000){
+      if (!missing.some(function(m){ return m.self; })) return;
+      var lastSelf = parseInt(localStorage.getItem("gg_fin_self") || "0", 10) || 0;
+      if (now - lastSelf < 60 * 60 * 1000) return;
+    }
+  } catch (e){}
   if (fin.finalists.length + missing.length > FIN_SLOTS) missing = missing.slice(0, FIN_SLOTS - fin.finalists.length);
-  try { localStorage.setItem("gg_fin_fill", String(now)); } catch (e){}
-  finPost({ kind: "finb", v: 1, list: missing })
+  try {
+    localStorage.setItem("gg_fin_fill", String(now));
+    if (missing.some(function(m){ return m.self; })) localStorage.setItem("gg_fin_self", String(now));
+  } catch (e){}
+  var send = missing.map(function(m){ return { sid: m.sid, name: m.name, st: m.st }; });
+  finPost({ kind: "finb", v: 1, list: send })
     .then(function(){
       // 先本地补上让标签立刻出现，下次 finSync 再以云端为准
-      var merged = fin.finalists.map(function(f){ return { sid: f.sid, name: f.name, st: f.st }; }).concat(missing);
+      var merged = fin.finalists.map(function(f){ return { sid: f.sid, name: f.name, st: f.st }; }).concat(send);
       finApply(finRankList(merged));
       var el = document.getElementById("mRank");
       if (el && el.classList.contains("on")) renderRank();
@@ -2718,7 +2728,9 @@ function finClaim(silent){
   if (fin.finalists.length >= FIN_SLOTS && !fin.bySid[state.saveId]) return;
   var pub = "";
   try { pub = localStorage.getItem("gg_fin_pub") || ""; } catch (e){}
-  if (pub === state.saveId) return;
+  // 「发过一次就别再发」的前提是云端名单里真的查得到自己；
+  // 名单里没有（消息过期、上次被限流没发出去）就允许按小时重试补登记
+  if (pub === state.saveId && fin.bySid[state.saveId]) return;
   var now = Date.now();
   try {
     var lastTry = parseInt(localStorage.getItem("gg_fin_try") || "0", 10) || 0;
