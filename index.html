@@ -1299,8 +1299,13 @@ function coefFor(rate){
 
 function computeTarget(level){
   if (level === 0) return 0;
-  var v = 2000 + (level - 1) * 250;
-  if (v > 14250) v = 14250; // 第50关(14250)之后目标不再增长
+  var v;
+  if (level <= 79){
+    v = 2000 + (level - 1) * 250;
+    if (v > 14250) v = 14250; // 第50-79关目标停在14250
+  } else {
+    v = 14250 + (level - 79) * 250;   // 第80关起每关再加250
+  }
   return roundTo(v, 25);
 }
 function cumulativeTarget(level){
