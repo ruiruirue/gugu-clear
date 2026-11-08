@@ -443,7 +443,7 @@ body:has(#mSetup.on) .cover-acts{animation:none;opacity:0;}
 .rankrow .rn{flex:1 1 auto;min-width:0;}
 .rankrow .rn b{display:flex;flex-wrap:wrap;align-items:center;row-gap:3px;font-size:12.5px;font-weight:700;line-height:1.3;}
 .rankrow .rn b .nm{display:block;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;}
-/* 称号标签：限定 3 个的「第n菇菇终结者」暖金，不限量的「菇独求败」浅绿 */
+/* 称号标签：限量的「菇菇终结者」暖金（第 1、2 名带编号），不限量的「菇独求败」浅绿 */
 .rankrow .rn b .finTag{display:inline-block;flex:0 0 auto;margin-left:4px;padding:1px 6px;border-radius:6px;
   font-size:9px;font-weight:700;line-height:1.5;white-space:nowrap;letter-spacing:.01em;}
 .rankrow .rn b .finTag.gold{background:#FFF3DC;color:#A9660A;box-shadow:inset 0 0 0 1px #F0D8A8;}
@@ -748,7 +748,7 @@ input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;bac
           <button class="btn" id="copyId">复制</button>
           <button class="btn" id="newId">换 ID</button>
         </div>
-        <div class="field-tip">ID 是公开的：知道这个 ID 的人能读到你的云端存档。如果 ID 被别人看到，点「换 ID」换一个，本机进度全部保留，旧 ID 作废；称号（第n菇菇终结者、菇独求败）跟随 ID，换 ID 后也会一起作废。</div>
+        <div class="field-tip">ID 是公开的：知道这个 ID 的人能读到你的云端存档。如果 ID 被别人看到，点「换 ID」换一个，本机进度全部保留，旧 ID 作废；称号（菇菇终结者、菇独求败）跟随 ID，换 ID 后也会一起作废。</div>
       </div>
       <div class="field">
         <label for="loadId">输入 ID 读取存档（换设备续玩）</label>
@@ -2009,7 +2009,7 @@ function endRound(){
     state.earn[state.level] = newEarn;
     if (!isBonus && cleared){
       state.unlocked = Math.max(state.unlocked, state.level + 1);
-      // 通过第 50 关 → 去抢「第n菇菇终结者」的 3 个名额
+      // 通过第 50 关 → 去抢「菇菇终结者」的 10 个名额
       if (state.level === 50) finClaim();
       // 每5关送1个锤子，每10关送1个炸弹
       if (state.level % 5 === 0){
@@ -2209,12 +2209,13 @@ var BOARD_URL = "https://ntfy.sh/" + BOARD_TOPIC;
    这样别人也能看到你上传的照片，又不至于把榜单快照撑爆 */
 var AVA_TOPIC = "gumgum_ava_v1";
 var AVA_URL = "https://ntfy.sh/" + AVA_TOPIC;
-/* 「第n菇菇终结者」只有 3 个名额，编号必须跨设备、跨玩家统一排序，
+/* 「菇菇终结者」共 10 个名额：第 1、第 2 名带编号（第1/第2菇菇终结者），
+   第 3 到第 10 名统一叫「菇菇终结者」。编号必须跨设备、跨玩家统一排序，
    所以单独一条通道登记：以 ntfy 的服务器时间为达成顺序，按 ID 去重取最早。
    消息 12 小时会过期，靠任何打开排行榜的人按原始时间代续期（见 finRenew）。*/
 var FIN_TOPIC = "gumgum_fin_v1";
 var FIN_URL = "https://ntfy.sh/" + FIN_TOPIC;
-var FIN_SLOTS = 3;
+var FIN_SLOTS = 10;
 var fin = { finalists: [], bySid: {}, at: 0, loading: false };
 /* 读榜单走 since=最后一条 id 的增量拉取：云端历史快照攒到 1200+ 条（400KB+）后，
    一次性读全部要 30 秒，会超过请求超时导致榜单读不全。*/
@@ -2398,7 +2399,7 @@ function boardPublishMine(){
 var avaPubTimer = null;
 /* ============================================================
    称号
-   · 第n菇菇终结者：通过第 50 关，按达成时间取前 3 个（独立通道登记）
+   · 菇菇终结者：通过第 50 关，按达成时间取前 10 个（独立通道登记；第 1、2 名带编号）
    · 菇独求败：累计消灭 ≥ 10000 只（直接用榜单里的累计数判定，不限名额）
    ============================================================ */
 var FIN_GOAL_KILL = 10000;
@@ -2427,7 +2428,18 @@ function finParse(txt){
     if (!ev || ev.event !== "message" || !ev.message) return;
     var msg;
     try { msg = JSON.parse(ev.message); } catch (e){ return; }
-    if (!msg || msg.kind !== "fin" || !msg.sid) return;
+    if (!msg) return;
+    if (msg.kind === "finb" && msg.list && msg.list.length){
+      msg.list.forEach(function(f){
+        if (!f || !f.sid) return;
+        if (String(f.sid).indexOf("GG-SMOKE-") === 0) return;
+        var bk = parseInt(f.st, 10) || parseInt(ev.time, 10) || 0;
+        var bc = map[f.sid];
+        if (!bc || bk < bc.sort){ map[f.sid] = { sid: String(f.sid), name: String(f.name || "菇友").slice(0, 8), sort: bk, st: bk }; }
+      });
+      return;
+    }
+    if (msg.kind !== "fin" || !msg.sid) return;
     if (String(msg.sid).indexOf("GG-SMOKE-") === 0) return;
     var sk = parseInt(msg.st, 10) || parseInt(ev.time, 10) || 0;
     var cur = map[msg.sid];
@@ -2444,24 +2456,24 @@ function finApply(list){
   fin.bySid = {};
   fin.finalists.forEach(function(f){ fin.bySid[f.sid] = f.rank; });
   fin.at = Date.now();
-  // 自己进了前三：把编号存进存档，换设备读档也带得走
+  // 自己进了前十：把编号存进存档，换设备读档也带得走
   var mine = fin.bySid[state.saveId];
   if (mine && state.finRank !== mine){
     state.finRank = mine;
     save();
   }
 }
-/* 12 小时过期的对抗：任何人打开排行榜，都按原始达成时间把前三条重发一次。
-   同一条最多 6 小时续一次，避免白耗 ntfy 每天 250 条的额度。 */
+/* 12 小时过期的对抗：任何人打开排行榜，都按原始达成时间把前十名打包重发一次
+   （一条消息装下全部人，别一人一条刷爆通道）。同一条最多 24 小时续一次。 */
 function finRenew(){
   if (!fin.finalists.length) return;
   var key = "gg_fin_renew", last = 0;
   try { last = parseInt(localStorage.getItem(key) || "0", 10); } catch (e){}
-  if (Date.now() - last < 6 * 60 * 60 * 1000) return;
+  if (Date.now() - last < 24 * 60 * 60 * 1000) return;
   try { localStorage.setItem(key, String(Date.now())); } catch (e){}
-  fin.finalists.forEach(function(f){
-    finPost({ kind: "fin", sid: f.sid, name: f.name, st: f.st }).catch(function(){});
-  });
+  finPost({ kind: "finb", v: 1, list: fin.finalists.map(function(f){
+    return { sid: f.sid, name: f.name, st: f.st };
+  }) }).catch(function(){});
 }
 function finSync(){
   if (fin.loading) return Promise.resolve();
@@ -2481,27 +2493,40 @@ function finSync(){
     });
 }
 /* 通过第 50 关时登记一次。本地只记「已登记」，编号等云端排完序再回填 */
+/* 通过第 50 关时登记一次。发成功才记「已登记」；失败则每小时最多重试一次，
+   名额已满且自己不在名单里就不再发，免得白耗通道额度。 */
 function finClaim(silent){
   if (state.finRank) return;
-  if (localStorage.getItem("gg_fin_pub")) return;
   if (location.protocol === "file:") return;
-  try { localStorage.setItem("gg_fin_pub", "1"); } catch (e){}
+  if (fin.finalists.length >= FIN_SLOTS && !fin.bySid[state.saveId]) return;
+  var pub = "";
+  try { pub = localStorage.getItem("gg_fin_pub") || ""; } catch (e){}
+  if (pub === state.saveId) return;
+  var now = Date.now();
+  try {
+    var lastTry = parseInt(localStorage.getItem("gg_fin_try") || "0", 10) || 0;
+    if (now - lastTry < 60 * 60 * 1000) return;
+  } catch (e){}
+  try { localStorage.setItem("gg_fin_try", String(now)); } catch (e){}
   finPost({ kind: "fin", sid: state.saveId, name: (state.player.name || "菇友").slice(0, 8) })
     .then(function(){
+      try { localStorage.setItem("gg_fin_pub", state.saveId); } catch (e){}
       if (!silent) setTimeout(function(){ toast("通过第 50 关！已登记「菇菇终结者」，正在排队确认…"); }, 500);
       return finSync();
     })
     .then(function(){
       if (silent) return;
-      if (state.finRank) toast("恭喜！你是第 " + state.finRank + " 个通关第 50 关的，获得「第" + state.finRank + "菇菇终结者」");
-      else toast("第 50 关通关，但 3 个终结者名额已被抢完");
+      if (state.finRank === 1 || state.finRank === 2) toast("恭喜！你是第 " + state.finRank + " 个通关第 50 关的，获得「第" + state.finRank + "菇菇终结者」");
+      else if (state.finRank) toast("恭喜！你进入前十名，获得「菇菇终结者」");
+      else toast("第 50 关通关，但 10 个终结者名额已被抢完");
     })
     .catch(function(){});
 }
 /* 排行榜/小榜里挂在名字后的标签 */
 function finTagHtml(p){
   var h = "", rank = p.fin || 0, kill = Math.max(0, parseInt(p.kill, 10) || 0);
-  if (rank) h += '<span class="finTag gold">第' + rank + '菇菇终结者</span>';
+  if (rank === 1 || rank === 2) h += '<span class="finTag gold">第' + rank + '菇菇终结者</span>';
+  else if (rank) h += '<span class="finTag gold">菇菇终结者</span>';
   if (kill >= FIN_GOAL_KILL) h += '<span class="finTag moss">菇独求败</span>';
   return h;
 }
