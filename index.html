@@ -980,7 +980,11 @@ function rowsForLevel(level){
   if (level <= 29) return 13;  // 20-29关：多3行
   if (level <= 44) return 14;  // 30-44关：多4行
   if (level <= 49) return 15;  // 45-49关：多5行
-  return 16;                   // 50+关：多6行
+  if (level <= 80) return 16;  // 50-80关：多6行
+  if (level <= 85) return 17;  // 81关起每5关再加1排
+  if (level <= 90) return 18;
+  if (level <= 95) return 19;
+  return 20;                   // 96关起20排，100关后不再增排
 }
 function visOffset(){ return Math.max(0, ROWS - 10); } // 顶部隐藏行数
 var COLORS = ["red","green","blue","yellow","purple","black"];
@@ -1305,6 +1309,7 @@ function computeTarget(level){
     if (v > 14250) v = 14250; // 第50-79关目标停在14250
   } else {
     v = 14250 + (level - 79) * 250;   // 第80关起每关再加250
+    if (v > 19500) v = 19500;         // 第100关(19500)之后目标停止增加
   }
   return roundTo(v, 25);
 }
