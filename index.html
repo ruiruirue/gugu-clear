@@ -4048,10 +4048,14 @@ function boot(){
   syncKillDay();                              // 上次关掉可能是昨天，先按今天算
   if (state.unlocked > 50) finClaim(true);   // 之前通关过但登记没成功（断网或清过缓存）
   finSync();                                  // 顺手把云端称号名单与自己编号对一遍
-  /* 临时补发入口：老玩家在「菇处不胜函」上线前就做到过一万分，历史没存单次得分，
-     只能自己用一次 ?grant=bush 把称号补上（补过就不会再触发） */
+  /* 老玩家补发入口：功能上线前就做到过一万分的人，历史没存单次得分，只能自己补一次。
+     带口令才生效，随便拼 ?grant=bush 打不开，避免变成公开白拿渠道 */
   try {
-    if (/(^|[?&])grant=bush([&]|$)/.test(location.search) && !titleHas("bush")){
+    var GRANT_KEY = "7q3x9m2p";
+    var qs = location.search;
+    if (/(^|[?&])grant=bush([&]|$)/.test(qs) &&
+        new RegExp("(^|[?&])k=" + GRANT_KEY + "([&]|$)").test(qs) &&
+        !titleHas("bush")){
       setTimeout(function(){ grantTitle("bush"); }, 900);
       setTimeout(function(){ if (titlePend) showTitleModal(titlePend); }, 1700);
     }
