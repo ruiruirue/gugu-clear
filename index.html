@@ -1010,6 +1010,8 @@ input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;bac
 .iState{font-size:12px;line-height:1.6;color:#2B6A57;padding:8px 10px;border-radius:11px;
   background:#EFF7F3;border:1px solid rgba(43,106,87,.13);}
 .iState[hidden]{display:none;}
+.iNote{margin-top:7px;font-size:11.5px;line-height:1.6;color:#96A48A;}
+.iNote[hidden]{display:none;}
 .iOk{margin-top:13px;width:100%;min-height:42px;font-size:13.5px;}
 </style>
 <div class="modal" id="mTitle" aria-hidden="true">
@@ -1030,6 +1032,7 @@ input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;bac
     <div class="iMark" id="tiMark"></div>
     <div class="iName" id="tiName">菇菇终结者</div>
     <div class="iBody" id="tiBody"></div>
+    <div class="iNote" id="tiNote" hidden></div>
     <div class="iLine"></div>
     <div class="iState" id="tiState" hidden></div>
     <button class="btn leaf iOk" type="button" id="tiOk">知道了</button>
@@ -2559,6 +2562,8 @@ var avaPubTimer = null;
 var FIN_GOAL_KILL = 10000;
 /* 一次性成就称号：一次消除（点一下消掉的那一组）得分门槛 */
 var TITLE_BUSH_GAIN = 10000;
+/* 老存档（当时用口令补发，只记了「有」没记时间）补记的发放日：2026-11-08 */
+var TITLE_BUSH_LEGACY_AT = new Date(2026, 10, 8, 0, 0, 0).getTime();
 function finReq(url, opt){
   opt = opt || {};
   var ms = opt.timeout || 25000;
@@ -2854,15 +2859,20 @@ function closeTitleModal(){
 }
 /* ============ 称号来历弹窗：点榜上的标签就弹它 ============ */
 var TITLE_INFO = {
-  fin:  { name: "菇菇终结者", cls: "gold", body: "前十位通过第 <b>50</b> 关的玩家获得。" },
-  kill: { name: "菇独求败", cls: "moss", body: "累计消灭 <b>10000</b> 只菇菇即可获得。" },
-  bush: { name: "菇处不胜函", cls: "teal", body: "一次性消除菇菇得分超 <b>10000</b> 分获得。" }
+  fin:  { name: "菇菇终结者", cls: "gold", body: "前十位通过第 <b>50</b> 关的玩家获得。", note: "" },
+  kill: { name: "菇独求败", cls: "moss", body: "累计消灭 <b>10000</b> 只菇菇即可获得。", note: "" },
+  bush: { name: "菇处不胜函", cls: "teal", body: "一次性消除菇菇得分超 <b>10000</b> 分获得。", note: "仅闯关模式获得" }
 };
 function showTitleInfo(k){
   var c = TITLE_INFO[k], m = $("#mInfo");
   if (!c || !m) return;
   $("#tiName").textContent = c.name;
   $("#tiBody").innerHTML = c.body;
+  var note = $("#tiNote");
+  if (note){
+    note.hidden = !c.note;
+    note.textContent = c.note || "";
+  }
   var mark = $("#tiMark");
   if (mark) mark.className = "iMark " + c.cls;
   var st = $("#tiState");
@@ -3427,7 +3437,11 @@ function applySaveData(d){
   state.finRank = Math.max(0, Math.min(FIN_SLOTS, parseInt(d.finRank, 10) || 0));
   state.titles = {};
   if (d.titles && typeof d.titles === "object"){
-    if (d.titles.bush) state.titles.bush = d.titles.bush;
+    var _tb = d.titles.bush;
+    if (_tb){
+      // 老存档只记了「有」，没有时间：补一个补发当天的日期，弹窗才能显示「你已获得 · 日期」
+      state.titles.bush = (_tb && typeof _tb === "object" && _tb.at) ? _tb : { at: TITLE_BUSH_LEGACY_AT };
+    }
   }
   state.earn = {};
   if (d.earn && typeof d.earn === "object"){
