@@ -1624,15 +1624,20 @@ function sfxPop(size){
   } catch (e) {}
 }
 
-var laughEl = null;
+var laughSrc = null;
 function sfxLaugh(){
   if (state.sfx.mute) return;
-  if (!laughEl) laughEl = document.getElementById("laughAudio");
-  if (!laughEl) return;
-  laughEl.volume = clamp(state.sfx.vol / 100 * 0.8, 0, 1);
+  if (!laughSrc){
+    var srcEl = document.getElementById("laughAudio");
+    if (!srcEl) return;
+    laughSrc = srcEl.src;
+  }
+  // 每次新建 Audio 实例：复用同一个 <audio> 元素时，音频还没加载好就给 currentTime 赋值会抛错，
+  // 后面的 play() 直接被跳过，于是「全盘清空」有时一点声都没有。
+  var a = new Audio(laughSrc);
+  a.volume = clamp(state.sfx.vol / 100 * 0.8, 0, 1);
   try {
-    laughEl.currentTime = 0;
-    var p = laughEl.play();
+    var p = a.play();
     if (p && p.catch) p.catch(function(){});
   } catch (e) {}
 }
