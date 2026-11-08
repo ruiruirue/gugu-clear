@@ -401,6 +401,7 @@ body:has(#mSetup.on) .cover-acts{animation:none;opacity:0;}
 .guide-row b{display:block;font-size:13px;margin-bottom:2px;color:var(--ink);}
 .guide-row p{margin:0;font-size:11.5px;line-height:1.6;color:var(--ink-3);}
 .sheet-note{margin:12px 0 0;font-size:11px;line-height:1.7;color:var(--ink-3);}
+.today-sub{margin:-2px 16px 10px;font-size:11.5px;line-height:1.6;color:#7C9070;letter-spacing:.2px;}
 .sheet-acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;}
 .sheet-acts .btn{flex:1 1 auto;padding:0 14px;}
 .field{margin-top:14px;}
@@ -842,6 +843,7 @@ input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;bac
       </button>
     </div>
     <div class="sheet-body">
+      <p class="today-sub">榜单数据为昨日 00:00–24:00 消灭菇菇最多的三位玩家</p>
       <ol class="ranklist" id="todayList"></ol>
       <div class="today-mine">
         <div class="tm-row">
@@ -851,7 +853,7 @@ input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;bac
         <p id="todayMineTip">灭 1 只就能进候选</p>
       </div>
       <button class="btn leaf" id="todayOk" style="width:100%;margin-top:14px;">知道了</button>
-      <p class="sheet-note" style="text-align:center;">每天 24:00 结算一次 · 只统计当天消灭的菇菇</p>
+      <p class="sheet-note" style="text-align:center;">每天 24:00 公布 · 统计昨天一整天消灭的菇菇</p>
     </div>
   </div>
 </div>
@@ -3125,11 +3127,11 @@ function renderTodayBoard(){
     tip.innerHTML = "已经在榜上，守到 24:00 就能拿挂件";
   } else if (myIdx > 2){
     title.innerHTML = "你排第 <em>" + (myIdx + 1) + "</em> 名";
-    tip.innerHTML = "还差 <b>" + fmt(rows[2].n - myN + 1) + "</b> 只才能进前三";
+    tip.innerHTML = "还差 <b>" + fmt(rows[2].n - myN + 1) + "</b> 只就可以挤进前三";
   } else {
     title.innerHTML = "还没上榜";
     if (rows.length >= 3){
-      tip.innerHTML = "还差 <b>" + fmt(rows[2].n + 1) + "</b> 只才能进前三";
+      tip.innerHTML = "还差 <b>" + fmt(rows[2].n + 1) + "</b> 只就可以上榜";
     } else {
       tip.innerHTML = "灭 <b>1</b> 只就能进候选";
     }
@@ -3157,6 +3159,13 @@ setInterval(function(){
   syncKillDay();
   boardSync().then(function(){ maybeTodayBoard(); });
 }, 30000);
+/* 通道里的消息只留 12 小时：页面开着时每两小时把自己的快照续一次，
+   这样「昨天」的数才不会在 24:00 公布前过期 */
+var KEEPALIVE_MS = 2 * 60 * 60 * 1000;
+setInterval(function(){
+  if (!board.online || document.hidden) return;
+  boardPublishMine().catch(function(){});
+}, KEEPALIVE_MS);
 
 function rankListData(tab){
   tab = tab || rankTab;
