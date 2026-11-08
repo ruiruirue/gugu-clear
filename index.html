@@ -1645,6 +1645,7 @@ function preloadLaugh(){
     laughWant = false;
   }).catch(function(){ laughWant = false; });
 }
+var laughNodes = [];   // 必须留引用：不持有的话源节点会被 GC 回收，笑声音放到一半就断了
 function sfxLaugh(){
   if (state.sfx.mute) return;
   var ctx = audioCtx();
@@ -1654,6 +1655,10 @@ function sfxLaugh(){
     var g = ctx.createGain();
     g.gain.value = clamp(state.sfx.vol / 100 * 0.8, 0, 1);
     node.connect(g); g.connect(ctx.destination);
+    node.onended = function(){
+      for (var i = laughNodes.length - 1; i >= 0; i--) if (laughNodes[i] === node) laughNodes.splice(i, 1);
+    };
+    laughNodes.push(node);
     node.start(0);
     return;
   }
