@@ -1611,7 +1611,7 @@ function updateHint(){
   if (!hintEl) return;
   if (state.selected.size >= 2){
     var n = state.selected.size;
-    hintEl.innerHTML = '<span class="sel-hint">已选 <em>' + n + '</em> 只，可拿 <em>' + fmt(n * n * 5) + '</em> 分 — 再点一下消除</span>';
+    hintEl.innerHTML = '<span class="sel-hint">已选 <em>' + n + '</em> 只，可拿 <em>' + fmt(n * n * 3.5) + '</em> 分 — 再点一下消除</span>';
   }
   else {
     hintEl.textContent = "点选相邻同色菇菇，再点一下消除";
