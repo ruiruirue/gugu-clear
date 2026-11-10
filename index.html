@@ -257,6 +257,15 @@ button{background:none;border:0;padding:0;cursor:pointer;}
   background:linear-gradient(180deg,rgba(255,255,255,.7),transparent);
   border-radius:50%;pointer-events:none;z-index:1;
 }
+/* 藤蔓菇菇：叠一层藤蔓图，深绿描边 */
+.gum.vine{position:relative;}
+.gum.vine::after{
+  content:"";position:absolute;inset:0;
+  background:url("assets/vine.png") center/112% auto no-repeat;
+  pointer-events:none;z-index:2;
+  animation:vineGrow .3s ease-out;
+}
+@keyframes vineGrow{from{opacity:0;transform:scale(.5) rotate(-14deg);}to{opacity:1;transform:scale(1) rotate(0);}}
 .g-red{background-image:url("assets/gum-red.webp");}
 .g-green{background-image:url("assets/gum-green.webp");}
 .g-blue{background-image:url("assets/gum-blue.webp");}
@@ -904,6 +913,31 @@ input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;bac
   </div>
 </div>
 
+<!-- ===== 模态：藤蔓菇菇说明（第 30 关首次出现） ===== -->
+<div class="modal" id="mVine" aria-hidden="true">
+  <div class="sheet" style="max-width:380px;">
+    <div class="sheet-body" style="padding:24px 20px 20px;text-align:center;">
+      <div style="font-size:36px;margin-bottom:8px;">🌿</div>
+      <h2 style="margin:0 0 10px;font-family:var(--font-round);font-size:20px;color:#3A7D1A;">藤蔓菇菇出现了！</h2>
+      <div style="display:flex;justify-content:center;gap:8px;margin:12px 0 16px;">
+        <div class="gum g-red vine" style="width:44px;height:44px;border-radius:50%;background-size:cover;"></div>
+        <div class="gum g-green vine" style="width:44px;height:44px;border-radius:50%;background-size:cover;"></div>
+        <div class="gum g-blue vine" style="width:44px;height:44px;border-radius:50%;background-size:cover;"></div>
+      </div>
+      <p style="margin:0 0 8px;font-size:13px;line-height:1.8;color:var(--ink-2);text-align:left;">
+        <b style="color:#3A7D1A;">规则：</b><br>
+        被藤蔓缠住的菇菇<b>不能用锤子和炸弹消除</b>，只能点选同色菇菇连成一片，把它一起带走。
+      </p>
+      <p style="margin:0 0 16px;font-size:12px;line-height:1.7;color:var(--ink-3);text-align:left;">
+        每成功消除 2 组，所有藤蔓都会往上下左右随机爬一格，把旁边的一只普通菇菇也缠住，全盘最多 8 个。
+      </p>
+      <div class="sheet-acts">
+        <button class="btn primary" id="btnVineOk" style="width:100%;">我知道了</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ===== 模态：按钮讲解（首次进入游戏强制弹出） ===== -->
 <div class="modal" id="mGuide" aria-hidden="true">
   <div class="sheet" style="max-width:400px;">
@@ -1058,6 +1092,8 @@ input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;bac
    基础常量与工具
    ============================================================ */
 var ROWS = 10, COLS = 10, NC = 6, TOTAL_LEVELS = 520;
+/* 藤蔓菇菇：第 30 关起出现，开局 2 个，全盘最多 8 个，每消 2 组爬一格 */
+var VINE_FROM_LEVEL = 110, VINE_PER_LEVEL = 2, VINE_MAX = 8, VINE_GROW_EVERY = 2;
 function rowsForLevel(level){
   if (level === -1) return 10; // 无限模式固定10行
   if (level <= 10) return 10;
@@ -1168,7 +1204,74 @@ function genBoard(level, cols, rngSeed){
       }
     }
   }
+  board = sprinkleVines(board, level, rngSeed);
   return board;
+}
+
+/* ============================================================
+   藤蔓菇菇
+   ============================================================ */
+function sprinkleVines(board, level, rngSeed){
+  if (level < VINE_FROM_LEVEL) return board;
+  var rnd = mulberry32(rngSeed * 733 + 17);
+  var voff = visOffset();
+  var rStart = Math.max(1, voff);
+  var placed = 0, guard = 0;
+  while (placed < VINE_PER_LEVEL && guard < 400){
+    guard++;
+    var r = rStart + Math.floor(rnd() * Math.max(1, ROWS - 1 - rStart));
+    var c = 1 + Math.floor(rnd() * Math.max(1, COLS - 2));
+    if (r >= ROWS - 1) continue;               // 初始不下在最外一圈
+    var cell = board[r] && board[r][c];
+    if (!cell || cell.ice || cell.vine) continue;
+    cell.vine = true;
+    placed++;
+  }
+  return board;
+}
+
+function countVines(){
+  var n = 0;
+  for (var r = 0; r < ROWS; r++)
+    for (var c = 0; c < state.cols; c++)
+      if (state.board[r][c] && state.board[r][c].vine) n++;
+  return n;
+}
+
+function growVines(){
+  var voff = visOffset();
+  var list = [];
+  for (var r = voff; r < ROWS; r++){
+    for (var c = 0; c < state.cols; c++){
+      var o = state.board[r][c];
+      if (o && o.vine) list.push({ r: r, c: c });
+    }
+  }
+  if (!list.length) return;
+  var total = countVines();
+  if (total >= VINE_MAX) return;
+  var dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+  var grew = 0;
+  for (var i = 0; i < list.length; i++){
+    if (total >= VINE_MAX) break;
+    var vp = list[i];
+    var cand = [];
+    for (var d = 0; d < 4; d++){
+      var nr = vp.r + dirs[d][0], nc = vp.c + dirs[d][1];
+      if (nr < voff || nr >= ROWS || nc < 0 || nc >= state.cols) continue;
+      var nb = state.board[nr][nc];
+      if (!nb || nb.ice || nb.vine) continue;
+      cand.push({ r: nr, c: nc });
+    }
+    if (!cand.length) continue;
+    var pick = cand[Math.floor(Math.random() * cand.length)];
+    state.board[pick.r][pick.c].vine = true;
+    total++;
+    grew++;
+  }
+  if (grew > 0){
+    setTimeout(function(){ toast("藤蔓又爬了 " + grew + " 格"); }, 240);
+  }
 }
 
 /* ============================================================
@@ -1392,10 +1495,14 @@ function computeTarget(level){
   if (level <= 79){
     v = 2000 + (level - 1) * 250;
     if (v > 14250) v = 14250; // 第50-79关目标停在14250
+  } else if (level < 85){
+    v = 14250 + (level - 79) * 250;   // 第80-84关每关再加250
   } else if (level < 100){
-    v = 14250 + (level - 79) * 250;   // 第80-99关每关再加250
+    v = 15000;                        // 第85-99关单关目标固定15000
+  } else if (level <= 110) {
+    v = 20000;                         // 第100-110关单关目标固定20000
   } else {
-    v = 24000 + (level - 100) * 250;  // 第100关起从24000起步，之后每关再加250（不封顶）
+    v = 17500;                         // 第111关起单关目标固定17500，后面不再上涨
   }
   return roundTo(v, 25);
 }
@@ -1548,12 +1655,15 @@ function renderCells(animate, force){
         el.className = "cell";
         el.dataset.id = obj.id;
         var gum = document.createElement("div");
-        gum.className = "gum g-" + obj.color + (obj.ice ? " ice" : "");
+        gum.className = "gum g-" + obj.color + (obj.ice ? " ice" : "") + (obj.vine ? " vine" : "");
         el.appendChild(gum);
         cellsEl.appendChild(el);
         domMap.set(obj.id, el);
         el._x = null; el._y = null;
         fresh = true;
+      } else {
+        var gumEl = el.firstChild;
+        if (gumEl && gumEl.classList) gumEl.classList.toggle("vine", !!obj.vine);
       }
       var x = c * (cell + gap), y = (r - voff) * (cell + gap);
       if (fresh || force){
@@ -1875,6 +1985,12 @@ function maybeShowIceTip(lv){
   if (btn) btn.textContent = "我知道了，开始第 " + lv + " 关";
   setTimeout(function(){ openModal("mIce"); }, 300);
 }
+function maybeShowVineTip(lv){
+  if (lv !== VINE_FROM_LEVEL) return;
+  var btn = document.getElementById("btnVineOk");
+  if (btn) btn.textContent = "我知道了，开始第 " + lv + " 关";
+  setTimeout(function(){ openModal("mVine"); }, 300);
+}
 function startLevel(level){
   if (level > TOTAL_LEVELS) level = TOTAL_LEVELS;
   state.level = level;
@@ -1885,6 +2001,7 @@ function startLevel(level){
   state.ended = false;
   state.busy = false;
   state.turnCleared = 0;
+  state.vineTick = 0;
   if (level === -1){
     // 无限模式：无目标分，从0开始，无限补充
     state.replay = false;
@@ -1921,6 +2038,7 @@ function startLevel(level){
   updateHud();
   save();
   maybeShowIceTip(level);
+  maybeShowVineTip(level);
   requestAnimationFrame(function(){ layout(); });
 }
 
@@ -1937,6 +2055,11 @@ function onCellClick(id){
   // 锤子模式：直接敲掉一个菇菇
   if (state.hammerMode){
     if (state.busy) return;
+    var hObj = state.board[pos.r][pos.c];
+    if (hObj && hObj.vine){
+      toast("藤蔓缠住了，锤子敲不动");
+      return;
+    }
     state.hammerMode = false;
     state.hammers--;
     state.selected.clear();
@@ -1963,18 +2086,24 @@ function onCellClick(id){
   // 炸弹模式：消除选中菇菇相邻3x3共九个
   if (state.bombMode){
     if (state.busy) return;
-    state.bombMode = false;
-    state.bombs--;
     state.selected.clear();
     var grp = [];
+    var vineBlocked = 0;
     for (var dr = -1; dr <= 1; dr++){
       for (var dc = -1; dc <= 1; dc++){
         var nr = pos.r + dr, nc = pos.c + dc;
         if (nr >= 0 && nr < ROWS && nc >= 0 && nc < state.cols && state.board[nr][nc]){
+          if (state.board[nr][nc].vine){ vineBlocked++; continue; }
           grp.push({r: nr, c: nc});
         }
       }
     }
+    if (grp.length === 0){
+      toast(vineBlocked ? "藤蔓缠住了，炸弹炸不动" : "这附近没有可以炸的菇菇");
+      return;
+    }
+    state.bombMode = false;
+    state.bombs--;
     if (grp.length > 0){
       var totalN = grp.length;
       for (var gi = 0; gi < grp.length; gi++){
@@ -2080,6 +2209,15 @@ function clearGroup(grp){
 
   state.cols = collapse(state.board, state.cols, grp);
   state.selected.clear();
+
+  // 藤蔓：每成功消除 2 组，全场藤蔓各爬一格
+  if (state.level > 0 && VINE_GROW_EVERY > 0){
+    state.vineTick = (state.vineTick || 0) + 1;
+    if (state.vineTick >= VINE_GROW_EVERY){
+      state.vineTick = 0;
+      growVines();
+    }
+  }
 
   var fullClear = true;
   for (var r = 0; r < ROWS; r++){
@@ -3557,7 +3695,7 @@ function serializeBoard(){
     var row = [];
     for (var c = 0; c < COLS; c++){
       var o = state.board[r] ? state.board[r][c] : null;
-      row.push(o ? (o.color + (o.ice ? "!" : "")) : null);
+      row.push(o ? (o.color + (o.ice ? "!" : "") + (o.vine ? "~" : "")) : null);
     }
     arr.push(row);
   }
@@ -3593,6 +3731,7 @@ function saveNow(){
         target: state.target,
         turn: state.turnCleared,
         ended: state.ended,
+        vineTick: state.vineTick || 0,
         cells: serializeBoard()
       }
     };
@@ -3793,10 +3932,15 @@ function restoreSnapshot(d){
     for (var c = 0; c < COLS; c++){
       var col = src[c];
       if (!col) { row.push(null); continue; }
-      var isIce = col.charAt(col.length-1) === "!";
-      var color = isIce ? col.slice(0,-1) : col;
+      var isIce = false, isVine = false;
+      while (col && (col.charAt(col.length-1) === "!" || col.charAt(col.length-1) === "~")){
+        if (col.charAt(col.length-1) === "!") isIce = true; else isVine = true;
+        col = col.slice(0,-1);
+      }
+      var color = col;
       var cell = (color && COLORS.indexOf(color) >= 0) ? { id: nextId++, color: color } : null;
       if (cell && isIce && r >= visFrom) cell.ice = true;   // 旧存档里藏在隐藏行的冰块直接去掉
+      if (cell && isVine && r >= visFrom) cell.vine = true;
       row.push(cell);
     }
     board.push(row);
@@ -3808,6 +3952,7 @@ function restoreSnapshot(d){
   state.score = parseInt(snap.score, 10) || 0;
   state.target = parseInt(snap.target, 10) || computeTarget(state.level);
   state.turnCleared = parseInt(snap.turn, 10) || 0;
+  state.vineTick = parseInt(snap.vineTick, 10) || 0;
   state.selected.clear();
   state.ended = false;
   state.busy = false;
@@ -4037,6 +4182,7 @@ function bindEvents(){
 
   $("#btnCoverRank").addEventListener("click", function(){ openRank("campaign"); });
   $("#btnIceOk").addEventListener("click", function(){ closeModal("mIce"); });
+  $("#btnVineOk").addEventListener("click", function(){ closeModal("mVine"); });
   $("#todayOk").addEventListener("click", function(){ closeModal("mToday"); });
   $("#ttOk").addEventListener("click", function(){ closeTitleModal(); });
   $("#tiOk").addEventListener("click", function(){ closeTitleInfo(); });
@@ -4341,6 +4487,27 @@ function boot(){
   });
 
   var saved = loadSave();
+
+  // 测试通道：链接后加 ?unlock=all&key=gugu115 解锁全部关卡；再带 &lv=115 直接进该关
+  var devAll = false;
+  try {
+    var qs = new URLSearchParams(location.search);
+    if (qs.get("unlock") === "all" && qs.get("key") === "gugu115"){
+      devAll = true;
+      state.unlocked = TOTAL_LEVELS;
+      if (!state.saveId) state.saveId = genSaveId();
+      if (saved && saved.snap) saved.snap = null;
+      var goLv = parseInt(qs.get("lv"), 10);
+      if (goLv > 0 && goLv <= TOTAL_LEVELS) state.level = goLv;
+      if (!saved){
+        if (!state.player.name) state.player.name = "测试";
+        saved = true;
+      }
+      saveNow();
+      setTimeout(function(){ toast("测试通道：关卡已全部解锁"); }, 700);
+    }
+  } catch (e){}
+
   boardLoad();
   syncSfxUI();
   bindAvatarFile();
