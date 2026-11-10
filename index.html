@@ -193,14 +193,13 @@ button{background:none;border:0;padding:0;cursor:pointer;}
   border-radius:999px;background:rgba(255,255,255,.66);
   box-shadow:inset 0 0 0 1px rgba(120,150,90,.16);
 }
-.promoTrack{display:flex;align-items:center;width:max-content;height:29px;will-change:transform;animation:promoScroll 7s linear infinite;}
+.promoTrack{display:flex;align-items:center;width:max-content;height:29px;will-change:transform;animation:promoScroll 14s linear infinite;}
 .promoTrack img{
   display:block;height:26px;width:auto;flex:0 0 auto;
   user-select:none;-webkit-user-drag:none;
-  filter:drop-shadow(0 1px 1px rgba(90,126,60,.5)) drop-shadow(0 0 1px rgba(90,126,60,.4));
 }
 @keyframes promoScroll{from{transform:translateX(0);}to{transform:translateX(-50%);}}
-@media (prefers-reduced-motion:reduce){.promoTrack{animation-duration:40s;}}
+@media (prefers-reduced-motion:reduce){.promoTrack{animation-duration:80s;}}
 
 /* ===== 棋盘 ===== */
 .board-shell{
