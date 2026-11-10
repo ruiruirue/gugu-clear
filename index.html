@@ -4488,11 +4488,12 @@ function boot(){
 
   var saved = loadSave();
 
-  // 测试通道：链接后加 ?unlock=all&key=gugu115 解锁全部关卡；再带 &lv=115 直接进该关
+  // 测试通道：只在 solo 站和本地文件生效（生产站不开放），参数 ?unlock=all&key=gugu115，可再带 &lv=115
   var devAll = false;
   try {
     var qs = new URLSearchParams(location.search);
-    if (qs.get("unlock") === "all" && qs.get("key") === "gugu115"){
+    var devHostOK = location.protocol === "file:" || location.hostname.indexOf("solo") >= 0;
+    if (devHostOK && qs.get("unlock") === "all" && qs.get("key") === "gugu115"){
       devAll = true;
       state.unlocked = TOTAL_LEVELS;
       if (!state.saveId) state.saveId = genSaveId();
