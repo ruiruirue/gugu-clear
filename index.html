@@ -450,6 +450,7 @@ body:has(#mSetup.on) .cover-acts{animation:none;opacity:0;}
 .rankrow .rn b .finTag.gold{background:#FFF3DC;color:#A9660A;box-shadow:inset 0 0 0 1px #F0D8A8;}
 .rankrow .rn b .finTag.moss{background:#F3F9EA;color:#5C7F3C;box-shadow:inset 0 0 0 1px #DCEAC8;}
 .rankrow .rn b .finTag.teal{background:#EAF4F0;color:#2B6A57;box-shadow:inset 0 0 0 1px #CFE6DC;}
+.rankrow .rn b .finTag.royal{background:#F5EDFC;color:#6A3C9E;box-shadow:inset 0 0 0 1px #E2D0F2;}
 .rankrow .rn i{font-style:normal;font-size:9.5px;color:var(--ink-3);white-space:nowrap;}
 .rankrow .rs{flex:0 0 auto;text-align:right;}
 .rankrow .rs b{display:block;font-size:13px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.3;}
@@ -993,6 +994,7 @@ input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;bac
 .tdemo .finTag.gold{background:#FFF3DC;color:#A9660A;box-shadow:inset 0 0 0 1px #F0D8A8;}
 .tdemo .finTag.moss{background:#F3F9EA;color:#5C7F3C;box-shadow:inset 0 0 0 1px #DCEAC8;}
 .tdemo .finTag.teal{background:#EAF4F0;color:#2B6A57;box-shadow:inset 0 0 0 1px #CFE6DC;}
+.tdemo .finTag.royal{background:#F5EDFC;color:#6A3C9E;box-shadow:inset 0 0 0 1px #E2D0F2;}
 .tbtn{position:relative;margin-top:14px;width:100%;min-height:44px;font-size:14px;}
 /* 点称号看它的来历 */
 #mInfo{z-index:82;align-items:center;padding:22px;background:rgba(38,58,28,.34);}
@@ -1004,6 +1006,7 @@ input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;bac
 .iMark.gold{background:linear-gradient(90deg,rgba(224,188,110,0),#DFB863 22%,#DFB863 78%,rgba(224,188,110,0));}
 .iMark.moss{background:linear-gradient(90deg,rgba(168,203,132,0),#A0C87A 22%,#A0C87A 78%,rgba(168,203,132,0));}
 .iMark.teal{background:linear-gradient(90deg,rgba(127,192,166,0),#6FBC9F 22%,#6FBC9F 78%,rgba(127,192,166,0));}
+.iMark.royal{background:linear-gradient(90deg,rgba(150,110,200,0),#A87AD8 22%,#A87AD8 78%,rgba(150,110,200,0));}
 .iName{font-family:var(--font-round);font-size:21px;font-weight:800;color:#2A3D1E;letter-spacing:.06em;line-height:1.3;}
 .iBody{margin-top:10px;font-size:13px;line-height:1.9;color:#6C7A62;}
 .iBody b{color:#2A3D1E;font-weight:800;font-variant-numeric:tabular-nums;}
@@ -1437,6 +1440,7 @@ var state = {
   player: { name: "咪菇小王子", avatar: 3, custom: "" },
   saveId: "",
   finRank: 0,
+  kingRank: 0,
   starred: false,
   titles: {},        // 一次性成就称号：bush = 菇处不胜函（一次消除 ≥ 10000 分）
   sfx: { click: true, pop: true, vol: 45, mute: false }
@@ -2158,6 +2162,8 @@ function endRound(){
       state.unlocked = Math.max(state.unlocked, state.level + 1);
       // 通过第 50 关 → 去抢「菇菇终结者」的 10 个名额
       if (state.level === 50) finClaim();
+      // 通过第 100 关 → 去抢「菇菇王」的 3 个名额
+      if (state.level === 100) kingClaim();
       // 每5关送1个锤子，每10关送1个炸弹
       if (state.level % 5 === 0){
         state.hammers += 1;
@@ -2371,6 +2377,13 @@ var AVA_URL = "https://ntfy.sh/" + AVA_TOPIC;
 var FIN_TOPIC = "gumgum_fin_v1";
 var FIN_URL = "https://ntfy.sh/" + FIN_TOPIC;
 var FIN_SLOTS = 10;
+/* 「菇菇王」：前三位通过第 100 关的玩家，3 个名额，同样单独一条通道登记 */
+var KING_TOPIC = "gumgum_king_v1";
+var KING_URL = "https://ntfy.sh/" + KING_TOPIC;
+var KING_SLOTS = 3;
+var KING_LEVEL = 101;              // unlocked >= 101 即已通过第 100 关
+var KING_CACHE = "gumgum_king_cache";
+var king = { finalists: [], bySid: {}, at: 0, loading: false };
 var FIN_CACHE = "gumgum_fin_cache";
 var fin = { finalists: [], bySid: {}, at: 0, loading: false };
 /* 读榜单走 since=最后一条 id 的增量拉取：云端历史快照攒到 1200+ 条（400KB+）后，
@@ -2790,11 +2803,204 @@ function finClaim(silent){
     })
     .catch(function(){});
 }
+/* ============================================================
+   「菇菇王」：前三位通过第 100 关的玩家，共 3 个名额。
+   和「菇菇终结者」一样单开一条通道，按服务器时间排序、按 ID 去重。
+   ============================================================ */
+function kingPost(msg){
+  return finReq(KING_URL, {
+    method: "POST",
+    body: JSON.stringify(msg),
+    headers: { "Content-Type": "text/plain" }
+  });
+}
+function kingParse(txt){
+  var map = {}, rows = [];
+  (txt || "").split("\n").forEach(function(line){
+    line = line.trim();
+    if (!line) return;
+    var ev;
+    try { ev = JSON.parse(line); } catch (e){ return; }
+    if (!ev || ev.event !== "message" || !ev.message) return;
+    var msg;
+    try { msg = JSON.parse(ev.message); } catch (e){ return; }
+    if (!msg) return;
+    if (msg.kind === "kingb" && msg.list && msg.list.length){
+      msg.list.forEach(function(f){
+        if (!f || !f.sid) return;
+        if (String(f.sid).indexOf("GG-SMOKE-") === 0) return;
+        var bk = parseInt(f.st, 10) || parseInt(ev.time, 10) || 0;
+        var bc = map[f.sid];
+        if (!bc || bk < bc.sort){ map[f.sid] = { sid: String(f.sid), name: String(f.name || "菇友").slice(0, 8), sort: bk, st: bk }; }
+      });
+      return;
+    }
+    if (msg.kind !== "king" || !msg.sid) return;
+    if (String(msg.sid).indexOf("GG-SMOKE-") === 0) return;
+    var sk = parseInt(msg.st, 10) || parseInt(ev.time, 10) || 0;
+    var cur = map[msg.sid];
+    if (!cur || sk < cur.sort){ map[msg.sid] = { sid: String(msg.sid), name: String(msg.name || "菇友").slice(0, 8), sort: sk, st: sk }; }
+  });
+  Object.keys(map).forEach(function(k){ rows.push(map[k]); });
+  return rows;
+}
+function kingRankList(list){
+  var map = {};
+  (list || []).forEach(function(f){
+    if (!f || !f.sid) return;
+    if (String(f.sid).indexOf("GG-SMOKE-") === 0) return;
+    var st = parseInt(f.st, 10) || 0;
+    if (!map[f.sid] || st < map[f.sid].st){
+      map[f.sid] = { sid: String(f.sid), name: String(f.name || "菇友").slice(0, 8), st: st };
+    }
+  });
+  var rows = Object.keys(map).map(function(k){ return map[k]; });
+  rows.sort(function(a, b){ return a.st - b.st; });
+  return rows.slice(0, KING_SLOTS).map(function(r, i){
+    return { sid: r.sid, name: r.name, st: r.st, rank: i + 1 };
+  });
+}
+function kingCacheLoad(){
+  try {
+    var d = JSON.parse(localStorage.getItem(KING_CACHE) || "null");
+    if (!d || !d.list) return [];
+    return d.list.filter(function(f){ return f && f.sid; }).map(function(f){
+      return { sid: String(f.sid), name: String(f.name || "菇友"), st: parseInt(f.st, 10) || 0 };
+    });
+  } catch (e){ return []; }
+}
+function kingCacheSave(){
+  try {
+    if (!king.finalists.length) return;
+    localStorage.setItem(KING_CACHE, JSON.stringify({ at: Date.now(), list: king.finalists.map(function(f){
+      return { sid: f.sid, name: f.name, st: f.st };
+    }) }));
+  } catch (e){}
+}
+function kingApply(list){
+  king.finalists = list || [];
+  king.bySid = {};
+  king.finalists.forEach(function(f){ king.bySid[f.sid] = f.rank; });
+  king.at = Date.now();
+  kingCacheSave();
+  var mine = king.bySid[state.saveId];
+  if (mine && state.kingRank !== mine){
+    state.kingRank = mine;
+    save();
+  }
+}
+function kingFillGap(){
+  if (king.loading) return;
+  if (location.protocol === "file:") return;
+  if (!board.players || !board.players.length) return;
+  if (king.finalists.length >= KING_SLOTS) return;
+  var now = Date.now();
+  var missing = [];
+  (board.players || []).forEach(function(p){
+    if (!p || !p.sid) return;
+    if (String(p.sid).indexOf("GG-SMOKE-") === 0) return;
+    if ((parseInt(p.level, 10) || 0) < KING_LEVEL) return;
+    if (king.bySid[p.sid]) return;
+    missing.push({ sid: String(p.sid), name: String(p.name || "菇友").slice(0, 8),
+      st: Math.floor(now / 1000), self: p.sid === state.saveId });
+  });
+  if (!missing.length) return;
+  try {
+    var lastFill = parseInt(localStorage.getItem("gg_king_fill") || "0", 10) || 0;
+    if (now - lastFill < 2 * 60 * 60 * 1000){
+      if (!missing.some(function(m){ return m.self; })) return;
+      var lastSelf = parseInt(localStorage.getItem("gg_king_self") || "0", 10) || 0;
+      if (now - lastSelf < 60 * 60 * 1000) return;
+    }
+  } catch (e){}
+  if (king.finalists.length + missing.length > KING_SLOTS) missing = missing.slice(0, KING_SLOTS - king.finalists.length);
+  try {
+    localStorage.setItem("gg_king_fill", String(now));
+    if (missing.some(function(m){ return m.self; })) localStorage.setItem("gg_king_self", String(now));
+  } catch (e){}
+  var send = missing.map(function(m){ return { sid: m.sid, name: m.name, st: m.st }; });
+  kingPost({ kind: "kingb", v: 1, list: send })
+    .then(function(){
+      var merged = king.finalists.map(function(f){ return { sid: f.sid, name: f.name, st: f.st }; }).concat(send);
+      kingApply(kingRankList(merged));
+      var el = document.getElementById("mRank");
+      if (el && el.classList.contains("on")) renderRank();
+    })
+    .catch(function(){});
+}
+function kingRenew(){
+  if (!king.finalists.length) return;
+  var key = "gg_king_renew", last = 0;
+  try { last = parseInt(localStorage.getItem(key) || "0", 10); } catch (e){}
+  if (Date.now() - last < 24 * 60 * 60 * 1000) return;
+  try { localStorage.setItem(key, String(Date.now())); } catch (e){}
+  kingPost({ kind: "kingb", v: 1, list: king.finalists.map(function(f){
+    return { sid: f.sid, name: f.name, st: f.st };
+  }) }).catch(function(){});
+}
+function kingSync(){
+  if (king.loading) return Promise.resolve();
+  if (location.protocol === "file:") return Promise.resolve();
+  king.loading = true;
+  var cached = kingCacheLoad();
+  if (!king.finalists.length && cached.length) kingApply(kingRankList(cached));
+  return finReq(KING_URL + "/json?poll=1&since=6h")
+    .then(function(r){ return r.text(); })
+    .then(function(txt){
+      var rows = kingParse(txt);
+      if (rows.length) return rows;
+      return finReq(KING_URL + "/json?poll=1&since=all")
+        .then(function(r){ return r.text(); })
+        .then(function(t2){ return kingParse(t2); });
+    })
+    .then(function(rows){
+      if (rows && rows.length){
+        kingApply(kingRankList(rows.concat(kingCacheLoad())));
+        kingRenew();
+      }
+    })
+    .catch(function(){})
+    .then(function(){
+      king.loading = false;
+      var el = document.getElementById("mRank");
+      if (el && el.classList.contains("on")) renderRank();
+      kingFillGap();
+    });
+}
+function kingClaim(silent){
+  if (state.kingRank) return;
+  if (location.protocol === "file:") return;
+  if (king.finalists.length >= KING_SLOTS && !king.bySid[state.saveId]) return;
+  var pub = "";
+  try { pub = localStorage.getItem("gg_king_pub") || ""; } catch (e){}
+  if (pub === state.saveId && king.bySid[state.saveId]) return;
+  var now = Date.now();
+  try {
+    var lastTry = parseInt(localStorage.getItem("gg_king_try") || "0", 10) || 0;
+    if (now - lastTry < 60 * 60 * 1000) return;
+  } catch (e){}
+  try { localStorage.setItem("gg_king_try", String(now)); } catch (e){}
+  kingPost({ kind: "king", sid: state.saveId, name: (state.player.name || "菇友").slice(0, 8) })
+    .then(function(){
+      try { localStorage.setItem("gg_king_pub", state.saveId); } catch (e){}
+      if (!silent) setTimeout(function(){ toast("通过第 100 关！已登记「菇菇王」，正在排队确认…"); }, 500);
+      return kingSync();
+    })
+    .then(function(){
+      if (silent) return;
+      if (state.kingRank) toast("恭喜！你是前三位通关第 100 关的玩家，获得「菇菇王」");
+      else toast("第 100 关通关，但 3 个菇菇王名额已被抢完");
+    })
+    .catch(function(){});
+}
+
 /* 排行榜/小榜里挂在名字后的标签 */
 function finTagHtml(p){
   var h = "", rank = p.fin || 0, kill = Math.max(0, parseInt(p.kill, 10) || 0);
+  var krank = p.king || 0;
   if (rank === 1 || rank === 2) h += '<span class="finTag gold" data-t="fin">第' + rank + '菇菇终结者</span>';
   else if (rank) h += '<span class="finTag gold" data-t="fin">菇菇终结者</span>';
+  if (krank) h += '<span class="finTag royal" data-t="king">菇菇王</span>';
   if (kill >= FIN_GOAL_KILL) h += '<span class="finTag moss" data-t="kill">菇独求败</span>';
   if ((parseInt(p.tt, 10) || 0) & 1) h += '<span class="finTag teal" data-t="bush">菇处不胜函</span>';
   return h;
@@ -2849,7 +3055,7 @@ function showTitleModal(k){
   n.textContent = titleName(k);
   d.innerHTML = '一次消除拿到 <b>' + fmt(TITLE_BUSH_GAIN) + '</b> 分';
   dm.innerHTML = '<div class="rn"><b><span class="nm">' + esc(state.player.name || "咪菇小王子") +
-    '</span>' + finTagHtml({ fin: state.finRank, kill: state.total, tt: titlesMask(), me: true }) + '</b></div>';
+    '</span>' + finTagHtml({ fin: state.finRank, king: state.kingRank, kill: state.total, tt: titlesMask(), me: true }) + '</b></div>';
   m.classList.add("on");
   m.setAttribute("aria-hidden", "false");
   sfxPass();
@@ -2864,7 +3070,8 @@ function closeTitleModal(){
 var TITLE_INFO = {
   fin:  { name: "菇菇终结者", cls: "gold", body: "前十位通过第 <b>50</b> 关的玩家获得。", note: "" },
   kill: { name: "菇独求败", cls: "moss", body: "累计消灭 <b>10000</b> 只菇菇即可获得。", note: "" },
-  bush: { name: "菇处不胜函", cls: "teal", body: "一次性消除菇菇得分超 <b>10000</b> 分获得。", note: "仅闯关模式获得" }
+  bush: { name: "菇处不胜函", cls: "teal", body: "一次性消除菇菇得分超 <b>10000</b> 分获得。", note: "仅闯关模式获得" },
+  king: { name: "菇菇王", cls: "royal", body: "前三位通过第 <b>100</b> 关的玩家获得。", note: "仅闯关模式获得" }
 };
 function showTitleInfo(k){
   var c = TITLE_INFO[k], m = $("#mInfo");
@@ -2881,9 +3088,9 @@ function showTitleInfo(k){
   var st = $("#tiState");
   if (st){
     var at = (k === "bush" && titleHas("bush")) ? titleAt("bush") : "";
-    var show = (k === "bush" && titleHas("bush"));
+    var show = (k === "bush" && titleHas("bush")) || (k === "king" && !!state.kingRank);
     st.hidden = !show;
-    st.textContent = show ? (at ? ("你已获得 · " + at) : "你已获得") : "";
+    st.textContent = show ? ((k === "bush" && at) ? ("你已获得 · " + at) : "你已获得") : "";
   }
   m.classList.add("on");
   m.setAttribute("aria-hidden", "false");
@@ -3186,6 +3393,7 @@ function rankListData(tab){
       kill: Math.max(0, parseInt(p.kill, 10) || 0),
       tt: Math.max(0, parseInt(p.tt, 10) || 0),
       fin: (fin.bySid && fin.bySid[p.sid]) || 0,
+      king: (king.bySid && king.bySid[p.sid]) || 0,
       ava: (board.avas && board.avas[p.sid]) || "",
       me: false
     });
@@ -3193,7 +3401,8 @@ function rankListData(tab){
   var mineScore = Math.max(0, parseInt(me[key], 10) || 0);
   if (mineScore) list.push({ sid: me.sid, name: me.name, avatar: me.avatar, level: me.level, best: mineScore,
     kill: me.kill, tt: Math.max(0, parseInt(me.tt, 10) || 0),
-    fin: (fin.bySid && fin.bySid[me.sid]) || state.finRank || 0, me: true });
+    fin: (fin.bySid && fin.bySid[me.sid]) || state.finRank || 0,
+    king: (king.bySid && king.bySid[me.sid]) || state.kingRank || 0, me: true });
   list.sort(function(a, b){ return (b.best - a.best) || (b.level - a.level); });
   return list;
 }
@@ -3262,6 +3471,7 @@ function openRank(tab){
   renderRank();
   openModal("mRank");
   finSync();            // 称号名单单独通道，先拉一遍标签才能挂上去
+  kingSync();           // 菇菇王的 3 个名额同样是独立通道
   boardSync(true);
 }
 $("#rankTabCampaign").addEventListener("click", function(){ rankTab="campaign"; renderRank(); });
@@ -3371,6 +3581,8 @@ function saveNow(){
       killPrev: state.killPrev,
       killDate: state.killDate,
       finRank: state.finRank,
+
+      kingRank: state.kingRank,
       titles: state.titles,
       starred: state.starred,
       sfx: state.sfx,
@@ -3496,6 +3708,8 @@ function cloudSave(){
         level: state.level, unlocked: state.unlocked, earn: state.earn, total: state.total,
         killToday: state.killToday, killPrev: state.killPrev, killDate: state.killDate,
         finRank: state.finRank,
+
+        kingRank: state.kingRank,
         titles: state.titles,
         starred: state.starred, sfx: state.sfx, hammers: state.hammers, bombs: state.bombs,
         snap: { cols: state.cols, score: state.score, target: state.target,
@@ -4025,6 +4239,8 @@ function bindEvents(){
       level: state.level, unlocked: state.unlocked, earn: state.earn, total: state.total,
       killToday: state.killToday, killPrev: state.killPrev, killDate: state.killDate,
       finRank: state.finRank,
+
+      kingRank: state.kingRank,
       starred: state.starred, sfx: state.sfx, hammers: state.hammers, bombs: state.bombs,
       snap: {
         cols: state.cols, score: state.score, target: state.target,
@@ -4151,6 +4367,7 @@ function boot(){
   syncKillDay();                              // 上次关掉可能是昨天，先按今天算
   if (state.unlocked > 50) finClaim(true);   // 之前通关过但登记没成功（断网或清过缓存）
   finSync();                                  // 顺手把云端称号名单与自己编号对一遍
+  kingSync();                                 // 菇菇王的 3 个名额
   if (resumed){
     showView("game");
     requestAnimationFrame(function(){
