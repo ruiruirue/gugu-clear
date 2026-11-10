@@ -928,7 +928,7 @@ input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;bac
         <div class="guide-row"><span class="gi"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2l8 8-3 3-8-8z"/><path d="M11 5L4 12l6 6 7-7"/><path d="M3 21l3-3"/></svg></span><div><b>锤子</b><p>敲掉任意一只菇菇，冰块菇菇也能敲开。数量有限，用一次少一个。</p></div></div>
         <div class="guide-row"><span class="gi"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="14" r="7"/><path d="M12 7V4M9 4h6"/></svg></span><div><b>炸弹</b><p>一次炸掉一片菇菇，适合给一堆同色开道。数量有限，用一次少一个。</p></div></div>
         <div class="guide-row"><span class="gi"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 1 0 2.6-5.7"/><path d="M4 4.5V10h5.3"/></svg></span><div><b>重新开始</b><p>本局重打，本局拿到的分会清零，之前关卡结转的分不动。</p></div></div>
-        <div class="guide-row"><span class="gi"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3.5v17.5"/><path d="M5 4.8h13.5l-2.6 3.7 2.6 3.7H5"/></svg></span><div><b>立即结算</b><p>只有无限模式才有，占的就是「重新开始」那个位置。点了就把这一局的分记进无限榜，并直接弹出无限榜。</p></div></div>
+        <div class="guide-row"><span class="gi"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3.5v17.5"/><path d="M5 4.8h13.5l-2.6 3.7 2.6 3.7H5"/></svg></span><div><b>立即结算</b><p>只有无限模式才有，占的就是「重新开始」那个位置。点了会先弹一次确认，确认后把这一局的分记进无限榜，并直接弹出无限榜。</p></div></div>
       </div>
 
     </div>
@@ -4092,11 +4092,13 @@ function bindEvents(){
     });
   });
 
-  // 无限模式：立即结算，成绩记进无限榜并直接打开无限榜
+  // 无限模式：立即结算（二次确认），成绩记进无限榜并直接打开无限榜
   $("#btnEndSettle").addEventListener("click", function(){
     if (state.level !== -1 || state.ended) return;
-    state.quickRank = true;
-    endRound();
+    confirmDialog("立即结算本局？", "这一局的分会马上记进无限榜，结算后本局就结束了，不能接着打。", "确认结算", function(){
+      state.quickRank = true;
+      endRound();
+    });
   });
 
   $("#btnNewGame").addEventListener("click", function(){
