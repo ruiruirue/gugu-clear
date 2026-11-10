@@ -110,9 +110,14 @@ button{background:none;border:0;padding:0;cursor:pointer;}
   background:#EFF7E3;border:1.5px solid rgba(35,54,25,.22);
   object-fit:cover;padding:2px;
 }
-.ls-name{min-width:0;flex:1 1 auto;}
+.ls-name{min-width:0;flex:1 1 auto;display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.ls-name .ls-col{flex:1 1 auto;min-width:0;}
 .ls-name b{display:block;font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.25;}
 .ls-name i{display:block;font-style:normal;font-size:10px;color:var(--ink-3);white-space:nowrap;}
+.ls-stats{display:flex;gap:10px;flex:0 0 auto;padding-right:3px;}
+.ls-stat{text-align:right;}
+.ls-name .ls-stat em{display:block;font-style:normal;font-size:10.5px;color:var(--ink-3);line-height:1.4;white-space:nowrap;}
+.ls-name .ls-stat b{display:block;font-size:10.5px;font-weight:700;color:var(--ink-2);line-height:1.4;white-space:nowrap;overflow:visible;text-overflow:clip;font-variant-numeric:tabular-nums;}
 .chip{
   flex:0 0 auto;text-align:center;padding:4px 9px;border-radius:10px;
   background:#F3F9E9;border:1px solid rgba(35,54,25,.10);
@@ -654,8 +659,14 @@ input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;bac
     <div class="levelstrip">
       <img class="ls-avatar" id="lsAvatar" src="assets/gum-yellow.webp" alt="我的头像">
       <div class="ls-name">
-        <b id="lsName">咪菇小王子</b>
-        <i id="lsSub">累计消除 0 只</i>
+        <div class="ls-col">
+          <b id="lsName">咪菇小王子</b>
+          <i id="lsSub">累计消除 0 只</i>
+        </div>
+        <div class="ls-stats">
+          <span class="ls-stat"><em>本关</em><b id="lsLevelScore">0</b></span>
+          <span class="ls-stat"><em>本关最高</em><b id="lsLevelBest">0</b></span>
+        </div>
       </div>
       <div class="chip"><em>关卡</em><b id="lsLevel">1</b></div>
       <div class="chip"><em>目标</em><b id="lsTarget">0</b></div>
@@ -1777,6 +1788,12 @@ function updateHud(){
   $("#lsTarget").textContent = isBonus ? "无目标" : (isEndlessHud ? "无上限" : fmt(state.target));
   $("#lsName").textContent = state.player.name;
   $("#lsSub").textContent = "累计消除 " + fmt(state.total) + " 只";
+  // 本关得分 / 本关最高分（都只算这一关自己拿到的分，不含进关时结转的分）
+  var lvScoreNow = Math.max(0, state.score - state.carryStart);
+  var lvBestNow = Math.max(state.earn[state.level] || 0, lvScoreNow);
+  var lvScoreEl = $("#lsLevelScore"), lvBestEl = $("#lsLevelBest");
+  if (lvScoreEl) lvScoreEl.textContent = (isBonus || isEndlessHud) ? "—" : fmt(lvScoreNow);
+  if (lvBestEl) lvBestEl.textContent = (isBonus || isEndlessHud) ? "—" : fmt(lvBestNow);
   $("#lsAvatar").src = avatarSrc();
 
   // 无限模式用「立即结算」，闯关模式用「重新开始」，两者互斥，位置固定
