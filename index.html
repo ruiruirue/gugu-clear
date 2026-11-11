@@ -4526,6 +4526,12 @@ function boot(){
 
   var saved = loadSave();
 
+  // 作废登记：启动时无条件清掉本地菇菇王标记（不依赖通道是否读通，旧客户端漏清也能被拽回来）
+  if (KING_VOID[state.saveId] && state.kingRank){
+    state.kingRank = 0;
+    save();
+  }
+
   // 测试通道：只在 solo 站和本地文件生效（生产站不开放），参数 ?unlock=all&key=gugu115，可再带 &lv=115
   var devAll = false;
   try {
