@@ -2536,6 +2536,20 @@ var KING_TOPIC = "gumgum_king_v1";
 var KING_URL = "https://ntfy.sh/" + KING_TOPIC;
 var KING_SLOTS = 3;
 var KING_LEVEL = 101;              // unlocked >= 101 即已通过第 100 关
+/* 作废的误登记：before 之前的 claim 不算；nofill 表示不参与榜单自动补位。
+   nob 表示快照里的条目一律忽略（防止别人客户端的自动补位把他塞回来），
+   只有他本人真通关第 100 关时发出的 claim 才认 */
+var KING_VOID = { "GG-PZ95-KK6SU": { before: 1794292500, nofill: true, nob: true } };
+var KING_NOB = { "GG-PZ95-KK6SU": true };
+function kingVoided(sid, st){
+  var v = KING_VOID[sid];
+  return !!(v && st && st < v.before);
+}
+function kingNoFill(sid){
+  var v = KING_VOID[sid];
+  return !!(v && v.nofill);
+}
+function kingNoSnap(sid){ return !!KING_NOB[sid]; }
 var KING_CACHE = "gumgum_king_cache";
 var king = { finalists: [], bySid: {}, at: 0, loading: false };
 var FIN_CACHE = "gumgum_fin_cache";
@@ -2984,6 +2998,8 @@ function kingParse(txt){
         if (!f || !f.sid) return;
         if (String(f.sid).indexOf("GG-SMOKE-") === 0) return;
         var bk = parseInt(f.st, 10) || parseInt(ev.time, 10) || 0;
+        if (kingVoided(f.sid, bk)) return;
+        if (kingNoSnap(f.sid)) return;
         var bc = map[f.sid];
         if (!bc || bk < bc.sort){ map[f.sid] = { sid: String(f.sid), name: String(f.name || "菇友").slice(0, 8), sort: bk, st: bk }; }
       });
@@ -2992,6 +3008,7 @@ function kingParse(txt){
     if (msg.kind !== "king" || !msg.sid) return;
     if (String(msg.sid).indexOf("GG-SMOKE-") === 0) return;
     var sk = parseInt(msg.st, 10) || parseInt(ev.time, 10) || 0;
+    if (kingVoided(msg.sid, sk)) return;
     var cur = map[msg.sid];
     if (!cur || sk < cur.sort){ map[msg.sid] = { sid: String(msg.sid), name: String(msg.name || "菇友").slice(0, 8), sort: sk, st: sk }; }
   });
@@ -3004,6 +3021,7 @@ function kingRankList(list){
     if (!f || !f.sid) return;
     if (String(f.sid).indexOf("GG-SMOKE-") === 0) return;
     var st = parseInt(f.st, 10) || 0;
+    if (kingVoided(f.sid, st)) return;
     if (!map[f.sid] || st < map[f.sid].st){
       map[f.sid] = { sid: String(f.sid), name: String(f.name || "菇友").slice(0, 8), st: st };
     }
@@ -3038,7 +3056,9 @@ function kingApply(list){
   king.at = Date.now();
   kingCacheSave();
   var mine = king.bySid[state.saveId];
-  if (mine && state.kingRank !== mine){
+  if (!mine){
+    if (state.kingRank){ state.kingRank = 0; save(); }
+  } else if (state.kingRank !== mine){
     state.kingRank = mine;
     save();
   }
@@ -3055,6 +3075,7 @@ function kingFillGap(){
     if (String(p.sid).indexOf("GG-SMOKE-") === 0) return;
     if ((parseInt(p.level, 10) || 0) < KING_LEVEL) return;
     if (king.bySid[p.sid]) return;
+    if (kingNoFill(p.sid)) return;
     missing.push({ sid: String(p.sid), name: String(p.name || "菇友").slice(0, 8),
       st: Math.floor(now / 1000), self: p.sid === state.saveId });
   });
