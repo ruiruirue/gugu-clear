@@ -3023,6 +3023,7 @@ function kingRankList(list){
     if (String(f.sid).indexOf("GG-SMOKE-") === 0) return;
     var st = parseInt(f.st, 10) || 0;
     if (kingVoided(f.sid, st)) return;
+    if (kingNoSnap(f.sid)) return;
     if (!map[f.sid] || st < map[f.sid].st){
       map[f.sid] = { sid: String(f.sid), name: String(f.name || "菇友").slice(0, 8), st: st };
     }
@@ -3822,6 +3823,8 @@ function cleanName(s){
 
 function applySaveData(d){
   state.saveId = (typeof d.id === "string" && d.id) ? d.id : genSaveId();
+  // 作废登记：任何来源（本地存档、云端快照、存档码）读进来都强制清 0，防止旧客户端上报的值把它带回来
+  if (KING_VOID[state.saveId]) d.kingRank = 0;
   state.player.name = cleanName(d.name);
   state.player.avatar = (typeof d.avatar === "number" && d.avatar >= 0 && d.avatar < 6) ? d.avatar : 3;
   var _custom = (typeof d.custom === "string" && /^data:image\/(jpeg|png|webp);base64,/.test(d.custom) && d.custom.length <= 22000) ? d.custom : "";
