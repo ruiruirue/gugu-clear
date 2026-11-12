@@ -2521,6 +2521,11 @@ function confirmDialog(title, text, okLabel, cb){
    ============================================================ */
 var BOARD_TOPIC = "gumgum_board_7hq4m2x9";
 var BOARD_URL = "https://ntfy.sh/" + BOARD_TOPIC;
+/* 全量快照单独一条通道：主通道里每局一条「单人更新」，几天就堆到几千条，
+   读一次要好几分钟。这条通道只放全量快照（几小时一条），页面读它做基线，
+   再回主通道只补最近半小时的增量，开榜就能秒出。 */
+var BOARD_SNAP_TOPIC = "gumgum_board_snap_v1";
+var BOARD_SNAP_URL = "https://ntfy.sh/" + BOARD_SNAP_TOPIC;
 /* 头像单独一条通道：每个人一条消息（压缩成 48px 小图，正文压在 4KB 以内），
    这样别人也能看到你上传的照片，又不至于把榜单快照撑爆 */
 var AVA_TOPIC = "gumgum_ava_v1";
@@ -2558,7 +2563,7 @@ var fin = { finalists: [], bySid: {}, at: 0, loading: false };
 /* 读榜单走 since=最后一条 id 的增量拉取：云端历史快照攒到 1200+ 条（400KB+）后，
    一次性读全部要 30 秒，会超过请求超时导致榜单读不全。*/
 var BOARD_CACHE = "gumgum_board_v2";
-var board = { players: [], online: false, at: 0, loading: false, err: "", sig: "", pubAt: 0, fullAt: 0, lastId: "", avas: {}, avaLastId: "" };
+var board = { players: [], online: false, at: 0, loading: false, err: "", sig: "", pubAt: 0, fullAt: 0, lastId: "", snapId: "", snapAt: 0, avas: {}, avaLastId: "" };
 
 function boardMine(){
   syncKillDay();
@@ -2591,13 +2596,15 @@ function boardLoad(){
     board.pubAt = (d && d.pubAt) ? d.pubAt : 0;
     board.fullAt = (d && d.fullAt) ? d.fullAt : 0;
     board.lastId = (d && d.lastId) ? d.lastId : "";
+    board.snapId = (d && d.snapId) ? d.snapId : "";
+    board.snapAt = (d && d.snapAt) ? d.snapAt : 0;
     board.avas = (d && d.avas && typeof d.avas === "object") ? d.avas : {};
     board.avaLastId = (d && d.avaLastId) ? d.avaLastId : "";
   } catch (e){ /* 缓存不可用时忽略 */ }
 }
 function boardCache(){
   try {
-    localStorage.setItem(BOARD_CACHE, JSON.stringify({ players: board.players, at: board.at, sig: board.sig, pubAt: board.pubAt, fullAt: board.fullAt, lastId: board.lastId, avas: board.avas, avaLastId: board.avaLastId }));
+    localStorage.setItem(BOARD_CACHE, JSON.stringify({ players: board.players, at: board.at, sig: board.sig, pubAt: board.pubAt, fullAt: board.fullAt, lastId: board.lastId, snapId: board.snapId, snapAt: board.snapAt, avas: board.avas, avaLastId: board.avaLastId }));
   } catch (e){}
 }
 function boardReq(url, opt){
@@ -2711,12 +2718,12 @@ function boardSnapshotParts(){
     return JSON.stringify({ kind: "snapshot", v: 1, full: 1, t: Date.now(), part: idx, total: parts.length, players: list });
   });
 }
-function boardPublish(parts){
+function boardPostAll(url, parts){
   var i = 0;
   function next(){
     if (i >= parts.length) return Promise.resolve();
     var body = parts[i++];
-    return boardReq(BOARD_URL, {
+    return boardReq(url, {
       method: "POST",
       body: body,
       headers: { "Content-Type": "text/plain" }
@@ -2726,6 +2733,13 @@ function boardPublish(parts){
     });
   }
   return next();
+}
+function boardPublish(parts){
+  // 主通道照旧（老版本客户端还在读它），同时给「只放全量快照」的通道写一份，
+  // 新版客户端从这里取基线，读一次只要几秒
+  return boardPostAll(BOARD_URL, parts).then(function(){
+    return boardPostAll(BOARD_SNAP_URL, parts);
+  });
 }
 /* 日常同步只发自己这一条：ntfy 每个 IP 每天只有 250 条消息额度，全量分片会把额度迅速用光 */
 function boardPublishMine(){
@@ -3409,13 +3423,42 @@ function boardSyncRun(force){
   }
   // 只拉新增消息：云端累积的全量分片多了以后，一次性读全部要几十秒
   boardAvaSync();
-  // 冷启动（没有上次的游标）不读全历史：通道里已积累几千条，读到底要好几分钟。
-  // 先读近 6 小时拿到近期快照，拿到游标之后每次只拉新增。
-  var since = (board.lastId && board.players.length) ? board.lastId : "6h";
-  return boardReq(BOARD_URL + "/json?poll=1&since=" + encodeURIComponent(since))
-    .then(function(r){ return r.text(); })
-    .then(function(txt){
+  // 全量快照通道自带基线：几小时一条，读它是秒级。先读它，再决定主通道读多少
+  var snapSince = board.snapId || "all";
+  return boardReq(BOARD_SNAP_URL + "/json?poll=1&since=" + encodeURIComponent(snapSince))
+    .then(function(r){ return r.text(); }, function(){ return ""; })
+    .then(function(snapTxt){
+      // 快照通道还没内容时（老客户端不发），退回读近 6 小时，保证榜单不缺人
+      var gotSnap = !!(snapTxt && snapTxt.trim());
+      var since = (board.lastId && board.players.length)
+        ? board.lastId
+        : (gotSnap ? "30m" : "6h");
+      return boardReq(BOARD_URL + "/json?poll=1&since=" + encodeURIComponent(since))
+        .then(function(r){ return r.text(); })
+        .then(function(txt){ return [snapTxt, txt]; });
+    })
+    .then(function(pairs){
+      var snapTxt = pairs[0], txt = pairs[1];
       var rows = (board.players || []).slice();
+      // 1) 快照通道：全量基线
+      if (snapTxt){
+        var snapLast = "";
+        snapTxt.split("\n").forEach(function(line){
+          line = line.trim();
+          if (!line) return;
+          var sev;
+          try { sev = JSON.parse(line); } catch (e){ return; }
+          if (!sev) return;
+          if (sev.id) snapLast = String(sev.id);
+          if (sev.event !== "message" || !sev.message) return;
+          var sm;
+          try { sm = JSON.parse(sev.message); } catch (e){ return; }
+          if (!sm || sm.kind !== "snapshot" || !sm.players) return;
+          board.snapAt = Math.max(board.snapAt || 0, parseInt(sm.t, 10) || 0);
+          sm.players.forEach(function(p){ rows.push(p); });
+        });
+        if (snapLast) board.snapId = snapLast;
+      }
       var lastId = "";
       (txt || "").split("\n").forEach(function(line){
         line = line.trim();
@@ -3440,17 +3483,21 @@ function boardSyncRun(force){
       boardCache();
     })
     .then(function(){
-      // 平时只发自己这一条（省 ntfy 额度）；云端超过 6 小时没有全量快照时，才补发一次所有人
+      // 平时只发自己这一条（省 ntfy 额度）；快照通道超过 3 小时没有新的全量时，才补发一次所有人
       // 指纹只算自己那一条：别人更新时不必跟着重发，否则每次开榜都会给云端多塞一条消息
       var sig = JSON.stringify(boardRow(boardMine()));
-      var needFull = !board.fullAt || (Date.now() - board.fullAt) > 6 * 60 * 60 * 1000;
+      // 自己手里人太少（比如刚装、榜还没读全）就别发全量，否则会把残缺的名单写成所有人的基线
+      var haveEnough = (board.players || []).filter(function(p){
+        return p && ((parseInt(p.best, 10) || 0) > 0 || (parseInt(p.ebest, 10) || 0) > 0);
+      }).length >= 3;
+      var needFull = haveEnough && (!board.snapAt || (Date.now() - board.snapAt) > 3 * 60 * 60 * 1000);
       if (sig === board.sig && !needFull) return;
-      if (!force && board.pubAt && Date.now() - board.pubAt < 15000) return;
+      if (!force && board.pubAt && Date.now() - board.pubAt < 60000) return;
       var job = needFull ? boardPublish(boardSnapshotParts()) : boardPublishMine();
       return job.then(function(){
         board.sig = sig;
         board.pubAt = Date.now();
-        if (needFull) board.fullAt = Date.now();
+        if (needFull){ board.fullAt = Date.now(); board.snapAt = Date.now(); }
         boardCache();
       });
     })
