@@ -2603,7 +2603,7 @@ function boardCache(){
 function boardReq(url, opt){
   return new Promise(function(resolve, reject){
     var settled = false;
-    var timer = setTimeout(function(){ if (!settled){ settled = true; reject(new Error("timeout")); } }, 45000);
+    var timer = setTimeout(function(){ if (!settled){ settled = true; reject(new Error("timeout")); } }, 150000);
     fetch(url, opt || {}).then(function(r){
       if (settled) return;
       settled = true; clearTimeout(timer);
@@ -3409,7 +3409,9 @@ function boardSyncRun(force){
   }
   // 只拉新增消息：云端累积的全量分片多了以后，一次性读全部要几十秒
   boardAvaSync();
-  var since = (board.lastId && board.players.length) ? board.lastId : "all";
+  // 冷启动（没有上次的游标）不读全历史：通道里已积累几千条，读到底要好几分钟。
+  // 先读近 6 小时拿到近期快照，拿到游标之后每次只拉新增。
+  var since = (board.lastId && board.players.length) ? board.lastId : "6h";
   return boardReq(BOARD_URL + "/json?poll=1&since=" + encodeURIComponent(since))
     .then(function(r){ return r.text(); })
     .then(function(txt){
