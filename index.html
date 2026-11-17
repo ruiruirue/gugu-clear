@@ -2761,9 +2761,8 @@ function boardSnapParse(snapTxt){
       list = sm.players;
     }
     if (!list.length) return;
-    pieces.push({ t: parseInt(sm.t, 10) || 0, part: parseInt(sm.part, 10) || 0, total: parseInt(sm.total, 10) || 1, list: list });
+    pieces.push({ t: parseInt(sm.t, 10) || 0, part: parseInt(sm.part, 10) || 0, total: parseInt(sm.total, 10) || 1, list: list, id: String(sev.id || "") });
   });
-  if (snapLast) board.snapId = snapLast;
   if (!pieces.length) return null;
   var sorted = pieces.slice().sort(function(a, b){ return b.t - a.t; });
   var out = null, s, k;
@@ -2772,21 +2771,24 @@ function boardSnapParse(snapTxt){
     var grp = pieces.filter(function(x){ return tv - x.t >= 0 && tv - x.t <= 120000; });
     var total = 1;
     grp.forEach(function(x){ if (x.total > total) total = x.total; });
-    var slot = {}, got = 0;
+    var slot = {}, got = 0, lastId = "";
     grp.forEach(function(x){
       if (x.part >= total) return;
+      if (x.id && x.id > lastId) lastId = x.id;
       if (!slot[x.part]){ slot[x.part] = x.list; got++; }
     });
     if (total > 1 && got < total) continue;
     var list2 = [];
     for (k = 0; k < total; k++){ if (slot[k]) list2 = list2.concat(slot[k]); }
-    if (list2.length) out = { rows: list2, at: tv, total: total };
+    if (list2.length) out = { rows: list2, at: tv, total: total, id: lastId };
   }
+  // 只有凑齐一整批才记住读到哪了；残缺批次不推进游标，下次还能补回来
+  if (out && out.id) board.snapId = out.id;
   if (!out) return { rows: [], at: 0, bad: "incomplete" };
   return out;
 }
 function boardPostAll(url, parts){
-  var i = 0;
+  var i = 0, sent = 0;
   function next(){
     if (i >= parts.length) return Promise.resolve();
     var body = parts[i++];
@@ -2795,8 +2797,11 @@ function boardPostAll(url, parts){
       body: body,
       headers: { "Content-Type": "text/plain" }
     }).then(function(){
+      sent++;
       if (i >= parts.length) return null;
-      return new Promise(function(res){ setTimeout(res, 300); }).then(next);
+      // ntfy 一个 IP 每分钟能发的条数有限，连着发太多会被拦腰截断，宁可慢一点也要发全
+      var wait = (sent % 20 === 0) ? 61000 : 400;
+      return new Promise(function(res){ setTimeout(res, wait); }).then(next);
     });
   }
   return next();
@@ -3500,12 +3505,20 @@ function boardSyncRun(force){
   boardAvaSync();
   // 全量快照通道自带基线：几小时一条，读它是秒级。先读它，再决定主通道读多少
   // 每次都整份读（通道很小），这样能判断「这一批片是不是发全了」，残缺的批次不会被当成基线
-  var snapSince = "all";
-  return boardReq(BOARD_SNAP_URL + "/json?poll=1&since=" + encodeURIComponent(snapSince))
-    .then(function(r){ return r.text(); }, function(){ return ""; })
-    .then(function(snapTxt){
+  // 常态只读「上次读到之后」的新片（几十 KB，几秒）；只拿到半批时退一步整份读
+  var snapFirst = board.snapId || "all";
+  function snapFetch(since){
+    return boardReq(BOARD_SNAP_URL + "/json?poll=1&since=" + encodeURIComponent(since))
+      .then(function(r){ return r.text(); }, function(){ return ""; });
+  }
+  return snapFetch(snapFirst)
+    .then(function(stxt){
+      var b0 = boardSnapParse(stxt);
+      if ((b0 && b0.rows && b0.rows.length) || snapFirst === "all") return b0;
+      return snapFetch("all").then(boardSnapParse);
+    })
+    .then(function(base){
       // 先判断基线是不是完整，再决定主通道读多少：有基线走 30 分钟，没有才退回 6 小时
-      var base = boardSnapParse(snapTxt);
       var hasBase = !!(base && base.rows && base.rows.length);
       var since = (board.lastId && board.players.length)
         ? board.lastId
