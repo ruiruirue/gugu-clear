@@ -2696,17 +2696,28 @@ function utf8Bytes(s){
   }
   return n;
 }
+/* 快照用数组存一个人，省掉字段名，同样 3500 字节能装下两倍的人 */
+function boardPack(p){
+  return [String(p.sid || ""), String(p.name || ""), parseInt(p.avatar, 10) || 0, parseInt(p.level, 10) || 1,
+    parseInt(p.best, 10) || 0, parseInt(p.ebest, 10) || 0, parseInt(p.kill, 10) || 0,
+    parseInt(p.dk, 10) || 0, parseInt(p.dp, 10) || 0, String(p.dd || ""), parseInt(p.tt, 10) || 0];
+}
+function boardUnpack(a){
+  if (!a || a.length < 2) return null;
+  return { sid: a[0], name: a[1], avatar: a[2], level: a[3], best: a[4], ebest: a[5],
+    kill: a[6], dk: a[7], dp: a[8], dd: a[9], tt: a[10] };
+}
 function boardSnapshotParts(){
   // 0 分的人不进榜，也别占云端体积
   var all = (board.players || []).filter(function(p){
     return p && ((parseInt(p.best, 10) || 0) > 0 || (parseInt(p.ebest, 10) || 0) > 0);
   });
-  if (!all.length) return [];
+  if (!all.length) return null;
   var LIMIT = 3500;
   var parts = [], cur = [], i, body;
   for (i = 0; i < all.length; i++){
     cur.push(all[i]);
-    body = JSON.stringify({ kind: "snapshot", v: 1, t: Date.now(), players: cur });
+    body = JSON.stringify({ kind: "snapshot", v: 1, players: cur });
     if (utf8Bytes(body) > LIMIT && cur.length > 1){
       cur.pop();
       parts.push(cur.slice());
@@ -2714,9 +2725,65 @@ function boardSnapshotParts(){
     }
   }
   parts.push(cur);
-  return parts.map(function(list, idx){
-    return JSON.stringify({ kind: "snapshot", v: 1, full: 1, t: Date.now(), part: idx, total: parts.length, players: list });
+  // 压缩格式只给快照通道用：同样 3500 字节能装下两倍的人，片数少一半
+  var qparts = [], qcur = [];
+  for (i = 0; i < all.length; i++){
+    qcur.push(boardPack(all[i]));
+    body = JSON.stringify({ kind: "snapshot", v: 1, q: 1, players: qcur });
+    if (utf8Bytes(body) > LIMIT && qcur.length > 1){
+      qcur.pop();
+      qparts.push(qcur.slice());
+      qcur = [boardPack(all[i])];
+    }
+  }
+  if (qcur.length) qparts.push(qcur);
+  return { parts: parts, qparts: qparts };
+}
+/* 解析快照通道：从新到旧找「发全了」的一批（片号 0..total-1 齐），发不全的一批不当基线 */
+function boardSnapParse(snapTxt){
+  if (!snapTxt || !snapTxt.trim()) return null;
+  var pieces = [], snapLast = "";
+  snapTxt.split("\n").forEach(function(line){
+    line = line.trim();
+    if (!line) return;
+    var sev;
+    try { sev = JSON.parse(line); } catch (e){ return; }
+    if (!sev) return;
+    if (sev.id) snapLast = String(sev.id);
+    if (sev.event !== "message" || !sev.message) return;
+    var sm;
+    try { sm = JSON.parse(sev.message); } catch (e){ return; }
+    if (!sm || sm.kind !== "snapshot" || !sm.players) return;
+    var list = [];
+    if (sm.q || (sm.players[0] && Object.prototype.toString.call(sm.players[0]) === "[object Array]")){
+      sm.players.forEach(function(a){ var p = boardUnpack(a); if (p) list.push(p); });
+    } else {
+      list = sm.players;
+    }
+    if (!list.length) return;
+    pieces.push({ t: parseInt(sm.t, 10) || 0, part: parseInt(sm.part, 10) || 0, total: parseInt(sm.total, 10) || 1, list: list });
   });
+  if (snapLast) board.snapId = snapLast;
+  if (!pieces.length) return null;
+  var sorted = pieces.slice().sort(function(a, b){ return b.t - a.t; });
+  var out = null, s, k;
+  for (s = 0; s < sorted.length && !out; s++){
+    var tv = sorted[s].t;
+    var grp = pieces.filter(function(x){ return tv - x.t >= 0 && tv - x.t <= 120000; });
+    var total = 1;
+    grp.forEach(function(x){ if (x.total > total) total = x.total; });
+    var slot = {}, got = 0;
+    grp.forEach(function(x){
+      if (x.part >= total) return;
+      if (!slot[x.part]){ slot[x.part] = x.list; got++; }
+    });
+    if (total > 1 && got < total) continue;
+    var list2 = [];
+    for (k = 0; k < total; k++){ if (slot[k]) list2 = list2.concat(slot[k]); }
+    if (list2.length) out = { rows: list2, at: tv, total: total };
+  }
+  if (!out) return { rows: [], at: 0, bad: "incomplete" };
+  return out;
 }
 function boardPostAll(url, parts){
   var i = 0;
@@ -2734,11 +2801,19 @@ function boardPostAll(url, parts){
   }
   return next();
 }
-function boardPublish(parts){
+function boardPublish(info){
   // 主通道照旧（老版本客户端还在读它），同时给「只放全量快照」的通道写一份，
   // 新版客户端从这里取基线，读一次只要几秒
-  return boardPostAll(BOARD_URL, parts).then(function(){
-    return boardPostAll(BOARD_SNAP_URL, parts);
+  if (!info) return Promise.resolve();
+  var t = Date.now();
+  var plain = info.parts.map(function(list, idx){
+    return JSON.stringify({ kind: "snapshot", v: 1, full: 1, t: t + idx, part: idx, total: info.parts.length, players: list });
+  });
+  var q = (info.qparts || []).map(function(list, idx){
+    return JSON.stringify({ kind: "snapshot", v: 1, q: 1, full: 1, t: t + idx, part: idx, total: info.qparts.length, players: list });
+  });
+  return boardPostAll(BOARD_URL, plain).then(function(){
+    return q.length ? boardPostAll(BOARD_SNAP_URL, q) : null;
   });
 }
 /* 日常同步只发自己这一条：ntfy 每个 IP 每天只有 250 条消息额度，全量分片会把额度迅速用光 */
@@ -3424,40 +3499,32 @@ function boardSyncRun(force){
   // 只拉新增消息：云端累积的全量分片多了以后，一次性读全部要几十秒
   boardAvaSync();
   // 全量快照通道自带基线：几小时一条，读它是秒级。先读它，再决定主通道读多少
-  var snapSince = board.snapId || "all";
+  // 每次都整份读（通道很小），这样能判断「这一批片是不是发全了」，残缺的批次不会被当成基线
+  var snapSince = "all";
   return boardReq(BOARD_SNAP_URL + "/json?poll=1&since=" + encodeURIComponent(snapSince))
     .then(function(r){ return r.text(); }, function(){ return ""; })
     .then(function(snapTxt){
-      // 快照通道还没内容时（老客户端不发），退回读近 6 小时，保证榜单不缺人
-      var gotSnap = !!(snapTxt && snapTxt.trim());
+      // 先判断基线是不是完整，再决定主通道读多少：有基线走 30 分钟，没有才退回 6 小时
+      var base = boardSnapParse(snapTxt);
+      var hasBase = !!(base && base.rows && base.rows.length);
       var since = (board.lastId && board.players.length)
         ? board.lastId
-        : (gotSnap ? "30m" : "6h");
+        : (hasBase ? "30m" : "6h");
       return boardReq(BOARD_URL + "/json?poll=1&since=" + encodeURIComponent(since))
         .then(function(r){ return r.text(); })
-        .then(function(txt){ return [snapTxt, txt]; });
+        .then(function(txt){ return [base, txt]; });
     })
     .then(function(pairs){
-      var snapTxt = pairs[0], txt = pairs[1];
+      var base = pairs[0], txt = pairs[1];
       var rows = (board.players || []).slice();
       // 1) 快照通道：全量基线
-      if (snapTxt){
-        var snapLast = "";
-        snapTxt.split("\n").forEach(function(line){
-          line = line.trim();
-          if (!line) return;
-          var sev;
-          try { sev = JSON.parse(line); } catch (e){ return; }
-          if (!sev) return;
-          if (sev.id) snapLast = String(sev.id);
-          if (sev.event !== "message" || !sev.message) return;
-          var sm;
-          try { sm = JSON.parse(sev.message); } catch (e){ return; }
-          if (!sm || sm.kind !== "snapshot" || !sm.players) return;
-          board.snapAt = Math.max(board.snapAt || 0, parseInt(sm.t, 10) || 0);
-          sm.players.forEach(function(p){ rows.push(p); });
-        });
-        if (snapLast) board.snapId = snapLast;
+      if (base && base.rows && base.rows.length){
+        base.rows.forEach(function(p){ rows.push(p); });
+        board.snapAt = base.at;
+        board.snapOK = true;
+      } else if (base && base.bad){
+        board.snapOK = false;
+        board.snapBad = base.bad;
       }
       var lastId = "";
       (txt || "").split("\n").forEach(function(line){
