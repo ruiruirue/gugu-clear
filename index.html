@@ -3605,7 +3605,7 @@ function boardSyncRun(force){
    今日菇菇通缉榜：每天 24:00 结算「刚过去那一天」的前三名
    数据来自榜单里每个人都带的当天数量，不需要额外通道
    ============================================================ */
-var TODAY_SHOWN_KEY = "gg_today_shown";
+var TODAY_SHOWN_KEY = "gg_today_shown_v2";
 function boardYdayRows(){
   var me = boardMine();
   var list = boardMerge((board.players || []).slice(), me);
