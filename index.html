@@ -2563,7 +2563,7 @@ var fin = { finalists: [], bySid: {}, at: 0, loading: false };
 /* 读榜单走 since=最后一条 id 的增量拉取：云端历史快照攒到 1200+ 条（400KB+）后，
    一次性读全部要 30 秒，会超过请求超时导致榜单读不全。*/
 var BOARD_CACHE = "gumgum_board_v2";
-var board = { players: [], online: false, at: 0, loading: false, err: "", sig: "", pubAt: 0, fullAt: 0, lastId: "", snapId: "", snapAt: 0, avas: {}, avaLastId: "" };
+var board = { players: [], online: false, at: 0, loading: false, err: "", sig: "", pubAt: 0, fullAt: 0, lastId: "", snapId: "", snapAt: 0, snapDay: null, avas: {}, avaLastId: "" };
 
 function boardMine(){
   syncKillDay();
@@ -2598,13 +2598,14 @@ function boardLoad(){
     board.lastId = (d && d.lastId) ? d.lastId : "";
     board.snapId = (d && d.snapId) ? d.snapId : "";
     board.snapAt = (d && d.snapAt) ? d.snapAt : 0;
+    board.snapDay = (d && d.snapDay && d.snapDay.d) ? d.snapDay : null;
     board.avas = (d && d.avas && typeof d.avas === "object") ? d.avas : {};
     board.avaLastId = (d && d.avaLastId) ? d.avaLastId : "";
   } catch (e){ /* 缓存不可用时忽略 */ }
 }
 function boardCache(){
   try {
-    localStorage.setItem(BOARD_CACHE, JSON.stringify({ players: board.players, at: board.at, sig: board.sig, pubAt: board.pubAt, fullAt: board.fullAt, lastId: board.lastId, snapId: board.snapId, snapAt: board.snapAt, avas: board.avas, avaLastId: board.avaLastId }));
+    localStorage.setItem(BOARD_CACHE, JSON.stringify({ players: board.players, at: board.at, sig: board.sig, pubAt: board.pubAt, fullAt: board.fullAt, lastId: board.lastId, snapId: board.snapId, snapAt: board.snapAt, snapDay: board.snapDay, avas: board.avas, avaLastId: board.avaLastId }));
   } catch (e){}
 }
 function boardReq(url, opt){
@@ -2737,7 +2738,7 @@ function boardSnapshotParts(){
     }
   }
   if (qcur.length) qparts.push(qcur);
-  return { parts: parts, qparts: qparts };
+  return { parts: parts, qparts: qparts, day: boardYdayPack() };
 }
 /* 解析快照通道：从新到旧找「发全了」的一批（片号 0..total-1 齐），发不全的一批不当基线 */
 function boardSnapParse(snapTxt){
@@ -2761,7 +2762,7 @@ function boardSnapParse(snapTxt){
       list = sm.players;
     }
     if (!list.length) return;
-    pieces.push({ t: parseInt(sm.t, 10) || 0, part: parseInt(sm.part, 10) || 0, total: parseInt(sm.total, 10) || 1, list: list, id: String(sev.id || "") });
+    pieces.push({ t: parseInt(sm.t, 10) || 0, part: parseInt(sm.part, 10) || 0, total: parseInt(sm.total, 10) || 1, list: list, id: String(sev.id || ""), day: sm.day || null });
   });
   if (!pieces.length) return null;
   var sorted = pieces.slice().sort(function(a, b){ return b.t - a.t; });
@@ -2771,16 +2772,17 @@ function boardSnapParse(snapTxt){
     var grp = pieces.filter(function(x){ return tv - x.t >= 0 && tv - x.t <= 120000; });
     var total = 1;
     grp.forEach(function(x){ if (x.total > total) total = x.total; });
-    var slot = {}, got = 0, lastId = "";
+    var slot = {}, got = 0, lastId = "", day = null;
     grp.forEach(function(x){
       if (x.part >= total) return;
       if (x.id && x.id > lastId) lastId = x.id;
+      if (x.day && !day) day = x.day;
       if (!slot[x.part]){ slot[x.part] = x.list; got++; }
     });
     if (total > 1 && got < total) continue;
     var list2 = [];
     for (k = 0; k < total; k++){ if (slot[k]) list2 = list2.concat(slot[k]); }
-    if (list2.length) out = { rows: list2, at: tv, total: total, id: lastId };
+    if (list2.length) out = { rows: list2, at: tv, total: total, id: lastId, day: day };
   }
   // 只有凑齐一整批才记住读到哪了；残缺批次不推进游标，下次还能补回来
   if (out && out.id) board.snapId = out.id;
@@ -2812,10 +2814,14 @@ function boardPublish(info){
   if (!info) return Promise.resolve();
   var t = Date.now();
   var plain = info.parts.map(function(list, idx){
-    return JSON.stringify({ kind: "snapshot", v: 1, full: 1, t: t + idx, part: idx, total: info.parts.length, players: list });
+    var head = { kind: "snapshot", v: 1, full: 1, t: t + idx, part: idx, total: info.parts.length, players: list };
+    if (idx === 0 && info.day) head.day = info.day;
+    return JSON.stringify(head);
   });
   var q = (info.qparts || []).map(function(list, idx){
-    return JSON.stringify({ kind: "snapshot", v: 1, q: 1, full: 1, t: t + idx, part: idx, total: info.qparts.length, players: list });
+    var head = { kind: "snapshot", v: 1, q: 1, full: 1, t: t + idx, part: idx, total: info.qparts.length, players: list };
+    if (idx === 0 && info.day) head.day = info.day;
+    return JSON.stringify(head);
   });
   return boardPostAll(BOARD_URL, plain).then(function(){
     return q.length ? boardPostAll(BOARD_SNAP_URL, q) : null;
@@ -3535,6 +3541,7 @@ function boardSyncRun(force){
         base.rows.forEach(function(p){ rows.push(p); });
         board.snapAt = base.at;
         board.snapOK = true;
+        if (base.day && base.day.d) board.snapDay = base.day;
       } else if (base && base.bad){
         board.snapOK = false;
         board.snapBad = base.bad;
@@ -3599,7 +3606,7 @@ function boardSyncRun(force){
    数据来自榜单里每个人都带的当天数量，不需要额外通道
    ============================================================ */
 var TODAY_SHOWN_KEY = "gg_today_shown";
-function todayBoardRows(){
+function boardYdayRows(){
   var me = boardMine();
   var list = boardMerge((board.players || []).slice(), me);
   var rows = [];
@@ -3610,6 +3617,29 @@ function todayBoardRows(){
   });
   rows.sort(function(a, b){ return (b.n - a.n) || (b.level - a.level); });
   return rows;
+}
+/* 云端消息 12 小时就过期，「昨天」的数早上常常已经读不到了。
+   所以发全量快照的人顺手把昨日前三名一起写进快照，第二天早上直接从快照里读。 */
+function boardYdayPack(){
+  try {
+    var rows = boardYdayRows();
+    if (!rows.length) return null;
+    return { d: dayKey(-1), t: rows.slice(0, 3).map(function(p){ return [p.sid, p.name, p.avatar, p.level, p.n]; }) };
+  } catch (e){ return null; }
+}
+function todayBoardRows(){
+  // 先用云端快照里记着的昨日前三（跨设备、清缓存都能看到前一天的数据）
+  var sd = board.snapDay;
+  if (sd && sd.d === dayKey(-1) && sd.t && sd.t.length){
+    var me2 = boardMine();
+    var rows2 = sd.t.map(function(a){
+      return { sid: String(a[0] || ""), name: String(a[1] || "菇友"), avatar: parseInt(a[2], 10) || 0,
+        level: parseInt(a[3], 10) || 1, n: parseInt(a[4], 10) || 0, me: String(a[0] || "") === me2.sid };
+    });
+    rows2.sort(function(a, b){ return (b.n - a.n) || (b.level - a.level); });
+    return rows2;
+  }
+  return boardYdayRows();
 }
 function renderTodayBoard(){
   var rows = todayBoardRows();
