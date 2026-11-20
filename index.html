@@ -199,9 +199,14 @@ button{background:none;border:0;padding:0;cursor:pointer;}
   box-shadow:inset 0 0 0 1px rgba(120,150,90,.16);
 }
 .promoTrack{display:flex;align-items:center;width:max-content;height:29px;will-change:transform;animation:promoScroll 14s linear infinite;}
-.promoTrack img{
-  display:block;height:26px;width:auto;flex:0 0 auto;
-  user-select:none;-webkit-user-drag:none;
+.promoTrack .promoText{
+  display:block;white-space:nowrap;flex:0 0 auto;
+  font-size:16.5px;font-weight:800;line-height:29px;
+  color:#ffffff;-webkit-text-stroke:1.1px #79b347;
+  paint-order:stroke fill;
+  text-shadow:0 1px 1px rgba(110,160,70,.35);
+  letter-spacing:.5px;padding-right:64px;
+  user-select:none;
 }
 @keyframes promoScroll{from{transform:translateX(0);}to{transform:translateX(-50%);}}
 @media (prefers-reduced-motion:reduce){.promoTrack{animation-duration:80s;}}
@@ -696,8 +701,7 @@ input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;bac
 
     <div class="promo" id="promoBar" aria-label="滚动公告">
       <div class="promoTrack" id="promoTrack">
-        <img src="assets/banner-strip.png" alt="" draggable="false">
-        <img src="assets/banner-strip.png" alt="" draggable="false">
+        <span class="promoText">11.21 20:00-12.14 23:59　vd安豹探险日记和花蕊童话手册，带安豹和小花蕊回家，不见不散　</span><span class="promoText">11.21 20:00-12.14 23:59　vd安豹探险日记和花蕊童话手册，带安豹和小花蕊回家，不见不散　</span>
       </div>
     </div>
 
