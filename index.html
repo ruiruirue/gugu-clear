@@ -2747,7 +2747,7 @@ function boardSnapshotParts(){
 /* 解析快照通道：从新到旧找「发全了」的一批（片号 0..total-1 齐），发不全的一批不当基线 */
 function boardSnapParse(snapTxt){
   if (!snapTxt || !snapTxt.trim()) return null;
-  var pieces = [], snapLast = "";
+  var pieces = [], snapLast = "", dayBestD = null;
   snapTxt.split("\n").forEach(function(line){
     line = line.trim();
     if (!line) return;
@@ -2758,7 +2758,13 @@ function boardSnapParse(snapTxt){
     if (sev.event !== "message" || !sev.message) return;
     var sm;
     try { sm = JSON.parse(sev.message); } catch (e){ return; }
-    if (!sm || sm.kind !== "snapshot" || !sm.players) return;
+    if (!sm || sm.kind !== "snapshot") return;
+    // 昨日前三可以单独发一条（players 为空），不受整批名单切片和限流影响
+    if (sm.day && sm.day.d){
+      var dtt = parseInt(sm.t, 10) || 0;
+      if (!dayBestD || dtt > dayBestD.t) dayBestD = { t: dtt, d: sm.day };
+    }
+    if (!sm.players) return;
     var list = [];
     if (sm.q || (sm.players[0] && Object.prototype.toString.call(sm.players[0]) === "[object Array]")){
       sm.players.forEach(function(a){ var p = boardUnpack(a); if (p) list.push(p); });
@@ -2768,9 +2774,12 @@ function boardSnapParse(snapTxt){
     if (!list.length) return;
     pieces.push({ t: parseInt(sm.t, 10) || 0, part: parseInt(sm.part, 10) || 0, total: parseInt(sm.total, 10) || 1, list: list, id: String(sev.id || ""), day: sm.day || null });
   });
-  if (!pieces.length) return null;
+  if (!pieces.length) {
+    if (dayBestD) return { rows: [], at: 0, total: 0, id: snapLast, day: dayBestD.d };
+    return null;
+  }
   // 昨日前三只有三条记录，跟整份名单不是一回事：哪怕这一批片子没发全，day 也该收下
-  var dayBest = null;
+  var dayBest = dayBestD;
   pieces.forEach(function(x){
     if (!x.day || !x.day.d) return;
     if (!dayBest || x.t > dayBest.t) dayBest = { t: x.t, d: x.day };
@@ -3523,7 +3532,10 @@ function boardSyncRun(force){
   // 全量快照通道自带基线：几小时一条，读它是秒级。先读它，再决定主通道读多少
   // 每次都整份读（通道很小），这样能判断「这一批片是不是发全了」，残缺的批次不会被当成基线
   // 常态只读「上次读到之后」的新片（几十 KB，几秒）；只拿到半批时退一步整份读
-  var snapFirst = board.snapId || "all";
+  // 昨日前三只写在发全量那一批的第 0 片里，增量读永远碰不到它，
+  // 所以今天还没拿到「昨天」的榜时，先整份读一次把它捞回来（一天只多这一次）。
+  var needDay = !(board.snapDay && board.snapDay.d === dayKey(-1));
+  var snapFirst = needDay ? "2h" : (board.snapId || "all");
   function snapFetch(since){
     return boardReq(BOARD_SNAP_URL + "/json?poll=1&since=" + encodeURIComponent(since))
       .then(function(r){ return r.text(); }, function(){ return ""; });
@@ -3531,7 +3543,8 @@ function boardSyncRun(force){
   return snapFetch(snapFirst)
     .then(function(stxt){
       var b0 = boardSnapParse(stxt);
-      if ((b0 && b0.rows && b0.rows.length) || snapFirst === "all") return b0;
+      if (b0 && b0.day && b0.day.d) return b0;
+      if (!needDay && ((b0 && b0.rows && b0.rows.length) || snapFirst === "all")) return b0;
       return snapFetch("all").then(boardSnapParse).then(function(bb){
         if (bb && !bb.day && b0 && b0.day) bb.day = b0.day;
         return bb;
@@ -3619,7 +3632,7 @@ function boardSyncRun(force){
    今日菇菇通缉榜：每天 24:00 结算「刚过去那一天」的前三名
    数据来自榜单里每个人都带的当天数量，不需要额外通道
    ============================================================ */
-var TODAY_SHOWN_KEY = "gg_today_shown_v2";
+var TODAY_SHOWN_KEY = "gg_today_shown_v3";
 function boardYdayRows(){
   var me = boardMine();
   var list = boardMerge((board.players || []).slice(), me);
@@ -3701,7 +3714,11 @@ function maybeTodayBoard(){
   try {
     if (localStorage.getItem(TODAY_SHOWN_KEY) === dayKey(0)) return false;
   } catch (e){}
-  if (!(board && board.players && board.players.length)) return false;
+  var rowsT = todayBoardRows();
+  if (!rowsT.length && !(board && board.players && board.players.length)) return false;
+  // 云端还没同步完就弹，会弹出一张空榜而且把「今天已弹过」标记掉，之后再也不弹。
+  // 所以榜是空的时，只有确定快照和主通道都读过了才认「确实没人上榜」。
+  if (!rowsT.length && !(board.snapOK && board.at)) return false;
   // 排行榜正开着就先让位，等关掉排行榜再补弹
   var rk = document.getElementById("mRank");
   if (rk && rk.classList.contains("on")) return false;
