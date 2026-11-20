@@ -2769,6 +2769,12 @@ function boardSnapParse(snapTxt){
     pieces.push({ t: parseInt(sm.t, 10) || 0, part: parseInt(sm.part, 10) || 0, total: parseInt(sm.total, 10) || 1, list: list, id: String(sev.id || ""), day: sm.day || null });
   });
   if (!pieces.length) return null;
+  // 昨日前三只有三条记录，跟整份名单不是一回事：哪怕这一批片子没发全，day 也该收下
+  var dayBest = null;
+  pieces.forEach(function(x){
+    if (!x.day || !x.day.d) return;
+    if (!dayBest || x.t > dayBest.t) dayBest = { t: x.t, d: x.day };
+  });
   var sorted = pieces.slice().sort(function(a, b){ return b.t - a.t; });
   var out = null, s, k;
   for (s = 0; s < sorted.length && !out; s++){
@@ -2790,7 +2796,8 @@ function boardSnapParse(snapTxt){
   }
   // 只有凑齐一整批才记住读到哪了；残缺批次不推进游标，下次还能补回来
   if (out && out.id) board.snapId = out.id;
-  if (!out) return { rows: [], at: 0, bad: "incomplete" };
+  if (!out) return { rows: [], at: 0, bad: "incomplete", day: dayBest ? dayBest.d : null };
+  if (!out.day && dayBest) out.day = dayBest.d;
   return out;
 }
 function boardPostAll(url, parts){
@@ -3525,7 +3532,10 @@ function boardSyncRun(force){
     .then(function(stxt){
       var b0 = boardSnapParse(stxt);
       if ((b0 && b0.rows && b0.rows.length) || snapFirst === "all") return b0;
-      return snapFetch("all").then(boardSnapParse);
+      return snapFetch("all").then(boardSnapParse).then(function(bb){
+        if (bb && !bb.day && b0 && b0.day) bb.day = b0.day;
+        return bb;
+      });
     })
     .then(function(base){
       // 先判断基线是不是完整，再决定主通道读多少：有基线走 30 分钟，没有才退回 6 小时
@@ -3541,11 +3551,11 @@ function boardSyncRun(force){
       var base = pairs[0], txt = pairs[1];
       var rows = (board.players || []).slice();
       // 1) 快照通道：全量基线
+      if (base && base.day && base.day.d) board.snapDay = base.day;
       if (base && base.rows && base.rows.length){
         base.rows.forEach(function(p){ rows.push(p); });
         board.snapAt = base.at;
         board.snapOK = true;
-        if (base.day && base.day.d) board.snapDay = base.day;
       } else if (base && base.bad){
         board.snapOK = false;
         board.snapBad = base.bad;
