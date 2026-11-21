@@ -2851,6 +2851,7 @@ function boardPublish(info){
 function boardPublishMine(){
   var me = boardRow(boardMine());
   if (!me) return Promise.resolve();
+  boardPublishDayOnce();
   var body = JSON.stringify({ kind: "snapshot", v: 1, t: Date.now(), part: 0, total: 1, players: [me] });
   return boardReq(BOARD_URL, {
     method: "POST",
@@ -2859,6 +2860,24 @@ function boardPublishMine(){
   });
 }
 var avaPubTimer = null;
+/* 昨日前三单独发一条：只有三条记录，不会被限流截断，也不用等整份名单发全。
+   每个设备每天只发一次（本地记日期），谁先打开谁补上。 */
+function boardPublishDayOnce(){
+  var dayp = boardYdayPack();
+  if (!dayp || !dayp.d) return;
+  try {
+    if (localStorage.getItem("gg_day_pub") === dayp.d) return;
+  } catch (e){}
+  try {
+    localStorage.setItem("gg_day_pub", dayp.d);
+  } catch (e){}
+  var body = JSON.stringify({ kind: "snapshot", v: 1, q: 1, t: Date.now(), part: 0, total: 1, players: [], day: dayp });
+  boardReq(BOARD_SNAP_URL, {
+    method: "POST",
+    body: body,
+    headers: { "Content-Type": "text/plain" }
+  }).then(function(){}, function(){});
+}
 /* ============================================================
    称号
    · 菇菇终结者：通过第 50 关，按达成时间取前 10 个（独立通道登记；第 1、2 名带编号）
@@ -3732,7 +3751,7 @@ setInterval(function(){
   var t = dayKey(0);
   if (t === state.killDate) return;
   syncKillDay();
-  boardSync().then(function(){ maybeTodayBoard(); });
+  boardSync().then(function(){ boardPublishDayOnce(); maybeTodayBoard(); });
 }, 30000);
 /* 通道里的消息只留 12 小时：页面开着时每两小时把自己的快照续一次，
    这样「昨天」的数才不会在 24:00 公布前过期 */
