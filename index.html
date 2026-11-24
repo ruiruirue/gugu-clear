@@ -2762,7 +2762,12 @@ function boardSnapParse(snapTxt){
     // 昨日前三可以单独发一条（players 为空），不受整批名单切片和限流影响
     if (sm.day && sm.day.d){
       var dtt = parseInt(sm.t, 10) || 0;
-      if (!dayBestD || dtt > dayBestD.t) dayBestD = { t: dtt, d: sm.day };
+      // 有的设备只算得出自己那一条就发了，这种残缺的 day 不能盖掉完整的三条
+      if (!dayBestD){ dayBestD = { t: dtt, d: sm.day }; }
+      else {
+        var nl = (sm.day.t || []).length, ol = (dayBestD.d.t || []).length;
+        if (nl > ol || (nl === ol && dtt > dayBestD.t)) dayBestD = { t: dtt, d: sm.day };
+      }
     }
     if (!sm.players) return;
     var list = [];
@@ -2865,6 +2870,8 @@ var avaPubTimer = null;
 function boardPublishDayOnce(){
   var dayp = boardYdayPack();
   if (!dayp || !dayp.d) return;
+  // 只算出一个人就要发的话，会把别人发好的完整前三盖成残缺的，先攒够两人才发
+  if (!dayp.t || dayp.t.length < 2) return;
   try {
     if (localStorage.getItem("gg_day_pub") === dayp.d) return;
   } catch (e){}
