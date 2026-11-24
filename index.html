@@ -3643,6 +3643,7 @@ function boardSyncRun(force){
       if (el && el.classList.contains("on")) renderRank();
       // 同步完顺手判断一下今天的结算榜要不要弹
       maybeTodayBoard();
+      boardPublishDayOnce();
       finFillGap();
     });
 }
@@ -3734,10 +3735,9 @@ function maybeTodayBoard(){
     if (localStorage.getItem(TODAY_SHOWN_KEY) === dayKey(0)) return false;
   } catch (e){}
   var rowsT = todayBoardRows();
-  if (!rowsT.length && !(board && board.players && board.players.length)) return false;
-  // 云端还没同步完就弹，会弹出一张空榜而且把「今天已弹过」标记掉，之后再也不弹。
-  // 所以榜是空的时，只有确定快照和主通道都读过了才认「确实没人上榜」。
-  if (!rowsT.length && !(board.snapOK && board.at)) return false;
+  // 只要同步成功过一次就弹：榜是空的也要弹一次，不然大家以为这功能没了。
+  // 一开始什么都没读到时先不弹，等 30 秒后的那次同步重试。
+  if (!rowsT.length && !(board.snapOK || board.at)) return false;
   // 排行榜正开着就先让位，等关掉排行榜再补弹
   var rk = document.getElementById("mRank");
   if (rk && rk.classList.contains("on")) return false;
